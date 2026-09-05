@@ -8,7 +8,7 @@
 // Universal types and contracts
 export * from "./types.js"
 
-// Event Store
+// Event Store with causal ordering
 export { EventStore } from "./events/events.js"
 
 // Lifecycle state machines
@@ -55,13 +55,24 @@ export type { SagaStepDef, SagaExecutionResult, SagaExecutionResult as SagaResul
 // Semantic checkpointing
 export { CheckpointManager } from "./checkpoint/checkpoint.js"
 
-// Multi-factor scheduler
+// Multi-factor scheduler and decisions
 export { Scheduler } from "./scheduler/scheduler.js"
 export type { ScheduleCandidate, ScheduleCandidate as ScheduledWorker } from "./scheduler/scheduler.js"
 
 // Worker instances and lifecycle
 export { WorkerInstance } from "./worker/worker.js"
 export { WorkerManager } from "./worker/manager.js"
+
+// First-Class Runs
+export { RunInstance, RunManager } from "./run/run.js"
+
+// Agent-Agnostic Adapters
+export {
+  ScriptAgentAdapter,
+  OpenAIAgentAdapter,
+  AnthropicAgentAdapter,
+  MCPAgentAdapter,
+} from "./agents/adapter.js"
 
 // Human takeover and operator manager
 export { OperatorManager } from "./operator/operator.js"

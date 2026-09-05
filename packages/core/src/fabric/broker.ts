@@ -253,4 +253,20 @@ export class EnvironmentBroker {
   getLease(leaseId: string): EnvironmentLease | undefined {
     return this.leases.get(leaseId)
   }
+
+  register(type: EnvironmentType, options: { profile?: string } = {}): ExecutionEnvironment {
+    const id = `env_${type}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+    const env: ExecutionEnvironment = {
+      id,
+      type,
+      status: "IDLE",
+      loadedFiles: [],
+      cost: 0,
+      capabilities: [type],
+      profile: options.profile,
+      lastActiveAt: new Date(),
+    }
+    this.environments.set(id, env)
+    return env
+  }
 }

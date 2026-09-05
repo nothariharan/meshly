@@ -143,6 +143,7 @@ export class WorkerInstance implements IWorker {
   }
 
   checkpointState(step: number, verifiedWorldState?: Record<string, any>): CheckpointRef {
+    this.context.currentStep = step
     const cp = this.mesh.checkpoints.create({
       workerId: this.id,
       step,

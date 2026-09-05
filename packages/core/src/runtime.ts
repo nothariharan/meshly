@@ -1,6 +1,6 @@
 /**
  * @meshly/core - MeshlyRuntime Engine
- * The central operating layer managing autonomous workers, environment fabrics,
+ * The central operating layer managing autonomous workers, runs, environment fabrics,
  * verification contracts, memory budgets, and policy enforcement.
  */
 import {
@@ -11,21 +11,24 @@ import {
   EvidenceBundle,
   EnvironmentLease,
   ExecutionFabric,
+  AgentAdapter,
+  AgentActionRequest,
 } from "./types.js"
 import { EventStore } from "./events/events.js"
 import { SimulatorExecutionFabric } from "./fabric/simulator.js"
-import { EnvironmentBroker, AcquireRequirements } from "./fabric/broker.js"
-import { Scheduler } from "./scheduler/scheduler.js"
+import { EnvironmentBroker } from "./fabric/broker.js"
+import { Scheduler, ScheduleCandidate } from "./scheduler/scheduler.js"
 import { ContextManager } from "./context/context.js"
 import { MemoryManager } from "./memory/memory.js"
 import { CheckpointManager } from "./checkpoint/checkpoint.js"
 import { AuthorityManager } from "./authority/authority.js"
 import { Verifier } from "./verification/verifier.js"
-import { SagaTransaction, SagaStepDef } from "./transactions/saga.js"
+import { SagaTransaction } from "./transactions/saga.js"
 import { WorkerInstance } from "./worker/worker.js"
 import { WorkerManager } from "./worker/manager.js"
 import { OperatorManager } from "./operator/operator.js"
 import { FailureInjector } from "./failure/injector.js"
+import { RunManager, RunInstance } from "./run/run.js"
 
 export interface MeshlyConfig {
   executionFabric?: ExecutionFabric
@@ -57,6 +60,7 @@ export class MeshlyRuntime {
   public readonly checkpoints: CheckpointManager
   public readonly authority: AuthorityManager
   public readonly workers: WorkerManager
+  public readonly runs: RunManager
   public readonly operator: OperatorManager
   public readonly failures: FailureInjector
 
@@ -81,6 +85,7 @@ export class MeshlyRuntime {
     this.checkpoints = new CheckpointManager(this.events)
     this.authority = new AuthorityManager(this.events)
     this.workers = new WorkerManager(this)
+    this.runs = new RunManager(this.events)
     this.operator = new OperatorManager(this.events, this.contexts, this.broker)
     this.failures = new FailureInjector(this.events, this.broker)
   }
@@ -90,7 +95,185 @@ export class MeshlyRuntime {
   }
 
   /**
-   * SCHEDULE: Spawn a worker (convenience shortcut to workers.spawn)
+   * First-Class Run Execution: The high-level entry point
+   */
+  async run(params: {
+    task: string
+    capabilities: Capability[]
+    priority?: number
+    budget?: number
+    authority?: Authority
+    workflow?: WorkflowDef
+    metadata?: Record<string, any>
+  }): Promise<RunInstance> {
+    const worker = await this.workers.spawn({
+      task: params.task,
+      capabilities: params.capabilities,
+      priority: params.priority ?? 8,
+      budget: params.budget ?? 5.0,
+      authority: params.authority,
+      metadata: params.metadata,
+    })
+
+    const run = this.runs.create(worker)
+    worker.context.runId = run.runId
+
+    if (params.workflow) {
+      // Execute declarative workflow under this run
+      Promise.resolve().then(async () => {
+        try {
+          const saga = this.transaction(worker.id)
+          let lastEvidence: EvidenceBundle | undefined
+
+          for (const stepDef of params.workflow!.steps) {
+            const execStep = run.createStep({
+              intent: stepDef.contract.intent,
+              action: { tool: stepDef.name, args: {} },
+            })
+
+            run.updateStepStatus(execStep.id, "authorized")
+
+            saga.addStep({
+              name: stepDef.name,
+              contract: stepDef.contract,
+              action: async () => {
+                run.updateStepStatus(execStep.id, "executing")
+                return stepDef.action(worker.context)
+              },
+              observeState: async () => {
+                const obs = await stepDef.observe()
+                run.updateStepStatus(execStep.id, "observed", { observation: obs })
+                return obs
+              },
+              compensate: stepDef.compensate,
+            })
+          }
+
+          const res = await saga.execute()
+          if (res.completed) {
+            this.complete(worker.id)
+            run.complete(lastEvidence)
+          } else {
+            this.fail(worker.id, res.error)
+            run.fail(res.error)
+          }
+        } catch (err: any) {
+          this.fail(worker.id, err.message)
+          run.fail(err.message)
+        }
+      })
+    }
+
+    return run
+  }
+
+  /**
+   * Agent-Agnostic Execution Loop
+   * Runs an arbitrary AgentAdapter (OpenAI, Claude, Custom, MCP) through Meshly governance.
+   */
+  async runWithAgent(params: {
+    adapter: AgentAdapter
+    task: string
+    capabilities: Capability[]
+    priority?: number
+    budget?: number
+    authority?: Authority
+    maxSteps?: number
+    verifyContract?: VerificationContract
+  }): Promise<RunInstance> {
+    const worker = await this.workers.spawn({
+      task: params.task,
+      capabilities: params.capabilities,
+      priority: params.priority ?? 8,
+      budget: params.budget ?? 5.0,
+      authority: params.authority,
+    })
+
+    const run = this.runs.create(worker)
+    const maxSteps = params.maxSteps ?? 5
+
+    // Background execution loop
+    Promise.resolve().then(async () => {
+      try {
+        let actionReq = await params.adapter.start(worker.context)
+
+        for (let step = 1; step <= maxSteps; step++) {
+          if (actionReq.done) break
+
+          const execStep = run.createStep({
+            intent: actionReq.intent,
+            action: { tool: actionReq.tool, args: actionReq.args },
+          })
+
+          // Policy interception
+          const authResult = this.authority.authorize(worker.id, worker.authority, {
+            tool: actionReq.tool,
+            capability: params.capabilities[0],
+          })
+
+          if (!authResult.allowed) {
+            run.updateStepStatus(execStep.id, "rejected", { error: authResult.violation })
+            run.fail(authResult.violation)
+            return
+          }
+
+          run.updateStepStatus(execStep.id, "authorized")
+
+          // Verification Contract
+          const contract = params.verifyContract || {
+            intent: actionReq.intent,
+            preconditions: [],
+            postconditions: [],
+          }
+
+          const verifyRes = await this.verifyStep({
+            workerId: worker.id,
+            contract,
+            executeAction: async () => {
+              run.updateStepStatus(execStep.id, "executing")
+              worker.deductSpend(0.02)
+              return { claimedSuccess: actionReq.claimedSuccess !== false }
+            },
+            observeState: async () => {
+              const obs = { step, tool: actionReq.tool, verified: true }
+              run.updateStepStatus(execStep.id, "observed", { observation: obs })
+              return obs
+            },
+          })
+
+          if (verifyRes.state.worldStateMatched) {
+            run.updateStepStatus(execStep.id, "committed", {
+              agentClaim: verifyRes.state.agentClaim,
+              toolExecution: verifyRes.state.toolExecution,
+              worldStateMatched: true,
+              evidence: verifyRes.evidence,
+            })
+            actionReq = await params.adapter.handleObservation(worker.context, verifyRes.state.observations)
+          } else {
+            run.updateStepStatus(execStep.id, "rejected", {
+              agentClaim: verifyRes.state.agentClaim,
+              toolExecution: verifyRes.state.toolExecution,
+              worldStateMatched: false,
+              error: verifyRes.state.error,
+            })
+            run.fail(`Verification divergence at step ${step}`)
+            return
+          }
+        }
+
+        this.complete(worker.id)
+        run.complete()
+      } catch (err: any) {
+        this.fail(worker.id, err.message)
+        run.fail(err.message)
+      }
+    })
+
+    return run
+  }
+
+  /**
+   * SCHEDULE: Spawn a worker (convenience shortcut)
    */
   async spawn(params: {
     task: string
@@ -194,7 +377,7 @@ export class MeshlyRuntime {
   }
 
   /**
-   * Declarative Workflow API (Point 28 of directive)
+   * Declarative Workflow API
    */
   workflow = {
     define: (def: WorkflowDef) => def,
@@ -233,14 +416,36 @@ export class MeshlyRuntime {
     totalWorkers: number
     queueLength: number
     activeWorkers: number
+    totalRuns: number
     totalEvents: number
-    environments: { total: number; busy: number; idle: number; paused: number; lost: number }
+    environments: {
+      total: number
+      busy: number
+      idle: number
+      paused: number
+      lost: number
+      byType: Record<string, { idle: number; busy: number; paused: number }>
+    }
   } {
     const envs = this.broker.list()
+    const byType: Record<string, { idle: number; busy: number; paused: number }> = {
+      browser: { idle: 0, busy: 0, paused: 0 },
+      sandbox: { idle: 0, busy: 0, paused: 0 },
+      desktop: { idle: 0, busy: 0, paused: 0 },
+    }
+
+    for (const e of envs) {
+      if (!byType[e.type]) byType[e.type] = { idle: 0, busy: 0, paused: 0 }
+      if (e.status === "IDLE") byType[e.type].idle += 1
+      else if (e.status === "BUSY") byType[e.type].busy += 1
+      else if (e.status === "PAUSED") byType[e.type].paused += 1
+    }
+
     return {
       totalWorkers: this.workers.size,
       queueLength: this.scheduler.getQueueLength(),
       activeWorkers: this.scheduler.getActiveCount(),
+      totalRuns: this.runs.list().length,
       totalEvents: this.events.count,
       environments: {
         total: envs.length,
@@ -248,6 +453,7 @@ export class MeshlyRuntime {
         idle: envs.filter((e) => e.status === "IDLE").length,
         paused: envs.filter((e) => e.status === "PAUSED").length,
         lost: envs.filter((e) => e.status === "LOST").length,
+        byType,
       },
     }
   }

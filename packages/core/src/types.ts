@@ -26,6 +26,15 @@ export type WorkerStatus =
   | "FAILED"
   | "CANCELLED"
 
+export type RunStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "PAUSED"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED"
+  | "VERIFICATION_FAILED"
+
 export type EnvironmentType = "browser" | "sandbox" | "desktop"
 
 export type EnvironmentStatus =
@@ -134,6 +143,7 @@ export interface ArtifactRecord {
 
 export interface WorkerContext {
   workerId: string
+  runId?: string
   task: string
   objective: string
   currentStep: number
@@ -166,6 +176,52 @@ export interface Worker {
   children: string[]
   createdAt: Date
   updatedAt: Date
+}
+
+export type ExecutionStepStatus =
+  | "planned"
+  | "authorized"
+  | "executing"
+  | "observed"
+  | "verified"
+  | "rejected"
+  | "committed"
+
+export interface ExecutionStep {
+  id: string
+  runId?: string
+  workerId: string
+  stepIndex: number
+  intent: string
+  action: {
+    tool: string
+    args: any
+    description?: string
+  }
+  status: ExecutionStepStatus
+  observation?: Record<string, any>
+  agentClaim?: "SUCCESS" | "FAILURE" | "PENDING"
+  toolExecution?: "SUCCESS" | "FAILURE" | "PENDING"
+  worldStateMatched?: boolean
+  evidence?: EvidenceBundle
+  error?: string
+  timestamp: number
+}
+
+export interface Run {
+  runId: string
+  workerId: string
+  objective: string
+  status: RunStatus
+  startedAt: number
+  completedAt?: number
+  environments: string[]
+  steps: ExecutionStep[]
+  checkpoints: CheckpointRef[]
+  events: string[]
+  artifacts: ArtifactRecord[]
+  evidence?: EvidenceBundle
+  error?: string
 }
 
 export interface VerificationCondition {
@@ -213,6 +269,11 @@ export interface EvidenceBundle {
     microvmLogs?: string[]
   }
   tamperEvidentDigestSha256: string
+  stepIndex?: number
+  target?: string
+  preconditionPassed?: boolean
+  postconditionPassed?: boolean
+  rawObservations?: Record<string, any>
 }
 
 export type EventType =
@@ -224,6 +285,12 @@ export type EventType =
   | "worker.cancelled"
   | "worker.completed"
   | "worker.failed"
+  | "run.started"
+  | "run.paused"
+  | "run.resumed"
+  | "run.completed"
+  | "run.failed"
+  | "run.cancelled"
   | "environment.acquired"
   | "environment.reused"
   | "environment.paused"
@@ -251,12 +318,41 @@ export type EventType =
 
 export interface MeshlyEvent {
   id: string
+  runId?: string
+  sequence: number
+  parentEventId?: string
   type: EventType
   timestamp: number
   workerId?: string
   environmentId?: string
   leaseId?: string
   data: Record<string, any>
+}
+
+export interface SchedulerDecision {
+  workerId: string
+  environmentId: string
+  timestamp: number
+  reasons: string[]
+  score: number
+  targetType: EnvironmentType
+  profileMatched?: string
+}
+
+export interface AgentActionRequest {
+  intent: string
+  tool: string
+  args: any
+  done?: boolean
+  claimedSuccess?: boolean
+}
+
+export interface AgentAdapter {
+  readonly name: string
+  start(context: WorkerContext, prompt?: string): Promise<AgentActionRequest>
+  resume(context: WorkerContext): Promise<AgentActionRequest>
+  handleObservation(context: WorkerContext, observation: Record<string, any>): Promise<AgentActionRequest>
+  interrupt(): Promise<void>
 }
 
 export interface BrowserLaunchOptions {

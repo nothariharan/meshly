@@ -16,10 +16,13 @@ import {
   EvidenceBundle,
   SagaTransaction,
   WorkflowDef,
+  RunInstance,
+  AgentAdapter,
 } from "@meshly/core"
 import { SolariExecutionFabric } from "@meshly/solari"
 
 export interface MeshlyClientOptions extends MeshlyConfig {
+  execution?: ExecutionFabric
   solariApiKey?: string
   preferSimulator?: boolean
 }
@@ -30,7 +33,9 @@ export class Meshly {
   constructor(options: MeshlyClientOptions = {}) {
     let fabric: ExecutionFabric
 
-    if (options.executionFabric) {
+    if (options.execution) {
+      fabric = options.execution
+    } else if (options.executionFabric) {
       fabric = options.executionFabric
     } else if (options.preferSimulator) {
       fabric = new SimulatorExecutionFabric()
@@ -62,6 +67,10 @@ export class Meshly {
     return this.runtime.workers
   }
 
+  get runs() {
+    return this.runtime.runs
+  }
+
   get authority() {
     return this.runtime.authority
   }
@@ -88,6 +97,39 @@ export class Meshly {
 
   get workflow() {
     return this.runtime.workflow
+  }
+
+  /**
+   * First-Class Run Execution:
+   * const run = await mesh.run({ task, capabilities, workflow })
+   */
+  async run(params: {
+    task: string
+    capabilities: Capability[]
+    priority?: number
+    budget?: number
+    authority?: Authority
+    workflow?: WorkflowDef
+    metadata?: Record<string, any>
+  }): Promise<RunInstance> {
+    return this.runtime.run(params)
+  }
+
+  /**
+   * Agent-Agnostic Execution:
+   * const run = await mesh.runWithAgent({ adapter, task, capabilities })
+   */
+  async runWithAgent(params: {
+    adapter: AgentAdapter
+    task: string
+    capabilities: Capability[]
+    priority?: number
+    budget?: number
+    authority?: Authority
+    maxSteps?: number
+    verifyContract?: VerificationContract
+  }): Promise<RunInstance> {
+    return this.runtime.runWithAgent(params)
   }
 
   // Core Ergonomics
