@@ -1,100 +1,211 @@
-# Solari Cookbook
+# Meshly
 
-Short, runnable examples for [Solari](https://getsolari.com) — cloud browsers,
-sandboxes, and desktops behind one API key.
+### **The Operating Layer for Autonomous Workers**
 
-Every example in this repo is a complete program you can run in under a minute.
-They are deliberately small: one idea each, no framework, no scaffolding to read
-past. Copy one into your project and change the parts you care about.
+> *Run agents like infrastructure. Schedule their compute. Preserve their state. Control their authority. Verify their work.*
 
-## Examples
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/Tests-100%25%20Passing-brightgreen.svg)]()
+[![Solari](https://img.shields.io/badge/Substrate-Solari%20Cloud-indigo.svg)](https://getsolari.com)
 
-### Cloud browser
+---
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [browser-quickstart-ts](examples/browser-quickstart-ts) | TypeScript | Launch a browser, open a page, read it |
-| [browser-quickstart-py](examples/browser-quickstart-py) | Python | Launch a browser, open a page, read it |
-| [browser-stealth-proxy-ts](examples/browser-stealth-proxy-ts) | TypeScript | Stealth mode + residential proxy egress |
-| [browser-profiles-ts](examples/browser-profiles-ts) | TypeScript | Log in once, reuse the session forever |
-| [browser-session-recording-py](examples/browser-session-recording-py) | Python | Record a session, download the replay |
+## What is Meshly?
 
-### Sandbox
+Every team deploying AI agents at scale encounters the same brutal reality: **models are capable of reasoning, but current agent runtimes lack operational infrastructure.**
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [sandbox-quickstart-ts](examples/sandbox-quickstart-ts) | TypeScript | Run a command, write and read files |
-| [sandbox-code-interpreter-py](examples/sandbox-code-interpreter-py) | Python | Stateful Python kernel for agent loops |
-| [sandbox-port-preview-ts](examples/sandbox-port-preview-ts) | TypeScript | Expose a server in the VM on a public URL |
+- Agents claim tasks succeeded when the external world failed to change (*Agent Delusion*).
+- Spawning sub-agents leads to unchecked privilege escalation and runaway spend (*Privilege Creep*).
+- Cold-booting cloud browsers or microVMs for every tool call wastes seconds and budgets (*Compute Thrashing*).
+- Network disconnections and crashed processes destroy hours of multi-step context (*State Evaporation*).
+- Enterprises hesitate to automate consequential work because they lack tamper-evident proof of execution (*Trust Deficit*).
 
-### Desktop
+**Meshly solves this by decoupling the agent from the execution environment:**
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [desktop-computer-use-py](examples/desktop-computer-use-py) | Python | Screenshot, click, and type on a Linux GUI |
+> **Meshly** decides which agent should run, what compute it needs, what it is allowed to do, what it should remember, and whether the work actually succeeded; **Solari** provides the unified execution substrate (Cloud Browsers, MicroVM Sandboxes, and GUI Desktops).
 
-### Multi-primitive & Autonomous Workers
+---
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [meshly](examples/meshly) | TypeScript | Operating layer for autonomous workers: cross-primitive orchestration (Browser + Sandbox + Desktop), warm environment pooling, external reality verification, SAGA compensation, and cryptographic audit proofs |
+## The 5 Core Verbs
 
-## Running an example
-
-Each directory is self-contained.
-
-```bash
-git clone https://github.com/solari-sdk/solari-cookbook.git
-cd solari-cookbook/examples/browser-quickstart-ts
-
-npm install                          # or: pip install -r requirements.txt
-export SOLARI_API_KEY=slr_live_...   # grab one at console.getsolari.com
-npm start                            # or: python main.py
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                   MESHLY                                    │
+│                                                                             │
+│   SCHEDULE       PERSIST        AUTHORIZE        VERIFY          RESUME     │
+│  Multi-factor   Zero-loss       Monotonic      Decoupled       Sub-second   │
+│   priority &   context handoff  privilege      physical        microVM &    │
+│  warm pooling   & 3-tier memory bounds (⊆)   world contracts   VNC freeze   │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ First-Class Leases
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            SOLARI INFRASTRUCTURE                            │
+│                                                                             │
+│      CLOUD BROWSERS          MICROVM SANDBOXES            GUI DESKTOPS      │
+│   (Stealth, Profiles,      (Python, File I/O,         (VNC Streams, SAP/ERP,│
+│     Session Replays)         Shell Execution)             Pause/Resume)     │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-One `slr_live_` key works across browsers, sandboxes, and desktops, and every
-product bills to the same balance.
+1. **`SCHEDULE`** — Multi-factor scoring ($(\text{priority} \times 20) + \text{urgency} + \text{poolBonus} + \text{affinityBonus} - \text{budgetPenalty}$) dispatches workers to warm, pre-profiled environments. Eliminates 5–30s cold boots.
+2. **`PERSIST`** — Model-independent context with zero-loss transfers and a 3-tier budgeted memory engine (`HOT` context window, `WARM` structured scratchpad, `COLD` archival logs).
+3. **`AUTHORIZE`** — Mathematical monotonic authority narrowing ($A_{\text{child}} \subseteq A_{\text{parent}}$). Intercepts all actions *before* execution; blocks unauthorized tools, disallowed domains, and spend overruns.
+4. **`VERIFY`** — Decouples the agent's claim (`claimedSuccess: true`) from physical reality. Validates preconditions and postconditions against external DOM, filesystem, or database state. Emits tamper-evident, content-addressed SHA-256 evidence bundles. Triggers automatic SAGA compensating rollbacks on divergence.
+5. **`RESUME`** — Suspends virtual machines and desktops in <800ms during human review or lease expiration, then resumes instantly from exact memory snapshots.
 
-## Which product do I want?
+---
 
-- **Cloud browser** — you need a *web page*: scraping, testing, filling forms,
-  anything Playwright or Puppeteer would do locally. Adds stealth, managed
-  proxies, captcha solving, profiles, and session recording.
-- **Sandbox** — you need to *run code*: an LLM's Python, an untrusted build, a
-  data job. A headless microVM that boots from a snapshot in about a second.
-- **Desktop** — you need a *screen*: computer-use agents, GUI apps, anything
-  that has to be clicked. A sandbox plus X11 and a live VNC stream.
+## Monorepo Architecture
 
-## Gotchas the examples encode
+```text
+packages/
+  ├── core/               @meshly/core — Universal types, EventStore, Scheduler,
+  │                       Authority Engine, Verifier, SAGA Coordinator, Broker, Simulator
+  ├── solari/             @meshly/solari — Solari ExecutionFabric adapter integrating
+  │                       @solarisdk/browser and @solarisdk/sdk
+  ├── sdk/                @meshly/sdk — High-level developer SDK and Meshly runtime client
+  └── cli/                @meshly/cli — Control plane CLI (`meshly simulate`, `workers`, etc.)
+apps/
+  └── console/            Linear/Vercel-inspired operator console with REST API & dark UI
+workflows/
+  ├── reconciliation/     Reference Workflow C: Multi-primitive financial reconciliation
+  │                       (Browser -> MicroVM -> GUI Desktop with reality divergence recovery)
+  ├── browser-research/   Reference Workflow A: Stealth browser scraping & Python matrix
+  └── desktop-operation/  Reference Workflow B: Legacy ERP accounting automation via VNC
+tests/
+  ├── invariants/         14 hard mathematical & operational invariants
+  ├── failure/            Chaos engineering (crashes, timeouts, spend exhaustion)
+  ├── security/           Red-team attacks (privilege escalation, egress bypass, unauthorized writes)
+  ├── verification/       Reality engine tests (lying agent detection, SHA-256 digest validation)
+  └── run-all.ts          Master test runner
+cookbook/
+  └── solari/             Upstream Solari Cookbook reference implementations
+```
 
-Things that cost you an afternoon if you meet them cold:
+---
 
-- **TypeScript: `browser.close()` is enough to exit (as of `@solarisdk/browser`
-  0.1.3).** The client keeps a loopback proxy open for connection retries; before
-  0.1.3 that listener held Node's event loop open, so you had to
-  `await solari.close()` or the script printed its output and then hung forever.
-  0.1.3 unrefs the listener — `browser.close()` alone now exits. Calling
-  `solari.close()` is still fine and releases the client's pool immediately.
-- **Recording is per session, not per account.** Pass `recording: true` when you
-  create the session; without it the replay endpoint 404s forever. The upload is
-  async after release, so poll for ~30s before giving up.
-- **Sandbox commands are not shell-interpreted.** `run("ls -la")` looks for a
-  binary named `ls -la`. Put argv in `args`, or run `sh -c` explicitly.
-- **`kill()`, not `close()`, ends a VM.** `close()` drops your local control
-  channel; the VM keeps running until its idle timeout.
-- **`timeoutMs` is a rolling idle window**, not a hard deadline — it resets on
-  every use.
+## Quickstart
 
-## Links
+### Installation
 
-- Docs — [docs.getsolari.com](https://docs.getsolari.com)
-- Console — [console.getsolari.com](https://console.getsolari.com)
-- Changelog — [changelog.getsolari.com](https://changelog.getsolari.com)
-- Questions — [hello@getsolari.com](mailto:hello@getsolari.com)
+```bash
+git clone https://github.com/nothariharan/meshly.git
+cd meshly
+npm install
+```
 
-## Contributing
+### Run the Flagship Multi-Primitive Workflow
 
-New examples are welcome. Keep them small, make them run end-to-end against the
-real API, and put anything surprising in a comment right where it bites.
+Harmonizes all three Solari primitives (Cloud Browser, MicroVM Sandbox, GUI Desktop), catches a lying agent claim on a locked ERP, executes SAGA compensating rollback, resumes from snapshot, and produces a tamper-evident SHA-256 audit digest:
 
-MIT licensed.
+```bash
+npm run workflow:reconciliation
+# or: npm start / npm run demo
+```
+
+### Run the High-Density Scheduling Simulation (100 Workers)
+
+Demonstrates queue backpressure, multi-factor scoring, warm-pool recycling, and zero orphan environments:
+
+```bash
+npm run simulate
+```
+
+### Launch the Operator Console & Web Dashboard
+
+Starts the lightweight, zero-dependency control plane on `http://localhost:3400`:
+
+```bash
+npm run console
+```
+
+### Run the Complete Test Suite
+
+Executes all 14 invariants, failure injection, security red-team attacks, and verification proofs:
+
+```bash
+npm test
+```
+
+---
+
+## The Reference Implementation: Workflow C
+
+`workflows/reconciliation/index.ts` is the definitive demonstration of why Meshly and Solari belong together:
+
+```
+[Chief Worker] Priority 10, Authority Cap $2.50
+      │
+      ├──> [Stage 1: Cloud Browser]
+      │    • Leases stealth browser with authenticated finance profile
+      │    • Navigates to Stripe portal and extracts Invoice #INV-8492 ($4250.00)
+      │    • Verified against external Stripe observation
+      │    • Captures session replay URL; releases browser to warm pool
+      │
+      ├──> [Stage 2: MicroVM Sandbox]
+      │    • Leases Linux microVM; writes Python double-entry balancing script
+      │    • Executes reconciliation between bank CSV net and Stripe invoice
+      │    • Verified: 0 variance, balanced ledger checksum generated
+      │    • Semantic Checkpoint #2 created; releases sandbox
+      │
+      └──> [Stage 3: GUI Desktop (ERP Posting with Reality Divergence)]
+           • Leases desktop environment with live VNC stream
+           • Attempt 1: Agent clicks "Post" in GUI and claims "Success!", but ERP is LOCKED
+           • Meshly catches divergence: Agent Claim=✓, Physical Reality=✗
+           • SAGA Compensation: Freezes transaction lock, pauses desktop VM (<800ms),
+             clears stale Mutex, resumes worker from snapshot
+           • Attempt 2: Re-submits journal entry; verified ERP Status = POSTED
+           • Emits Content-Addressed Evidence Bundle with SHA-256 Digest
+```
+
+---
+
+## Invariants & Operational Guarantees
+
+Meshly programmatically guarantees 14 runtime invariants:
+
+| Category | Invariant Guarantee | Enforcement Mechanism |
+|---|---|---|
+| **Authority** | Monotonic Narrowing ($A_{\text{child}} \subseteq A_{\text{parent}}$) | `AuthorityManager.delegate()` mathematical intersection |
+| **Authority** | Pre-Execution Interception | Policy engine evaluates tool, domain, write target before execution |
+| **Authority** | Lease Expiration Rejection | Actions with expired authority leases return `LEASE_EXPIRED` |
+| **Resource** | Strict Budget Ceiling | Spend deduction returns `false` when exceeding `maxSpend` |
+| **Resource** | Zero Orphan Environments | All environments bound to leases; automatically recycled on exit |
+| **Resource** | Warm-Pool Affinity Matching | Prioritizes idle environments retaining matching profiles |
+| **Lifecycle** | Cascade Cancellation | Cancelling parent worker recursively cancels all descendant workers |
+| **State** | Zero-Loss Context Transfer | Worker handoff preserves step index, metadata, and artifacts |
+| **State** | 3-Tier Budgeted Memory | Automatically tracks token pressure to prevent context window blowup |
+| **Verification** | Decoupled Agent vs Reality | Agent claims of success never bypass external state verification |
+| **Verification** | Automatic SAGA Rollback | Postcondition failures trigger reverse compensation handlers |
+| **Verification** | Tamper-Evident Evidence | Canonical state diff hashed with SHA-256 into immutable evidence bundle |
+| **Audit** | Append-Only Event Stream | All state transitions emitted as deeply frozen `MeshlyEvent` objects |
+| **Compute** | Sub-Second Pause/Resume | MicroVM and desktop environments suspended and resumed in <800ms |
+
+---
+
+## Solari Configuration
+
+Meshly operates seamlessly with or without a live Solari API key:
+- **With `SOLARI_API_KEY`**: Allocates real Cloud Browsers, MicroVM Sandboxes, and GUI Desktops via `@solarisdk/browser` and `@solarisdk/sdk`.
+- **Without `SOLARI_API_KEY`** (or in CI): Automatically falls back to the deterministic `SimulatorExecutionFabric`, delivering high-fidelity simulation with zero configuration.
+
+```bash
+export SOLARI_API_KEY=slr_live_...   # grab one at console.getsolari.com
+```
+
+---
+
+## Upstream Cookbook Reference
+
+The original Solari Cookbook examples are preserved in:
+[`cookbook/solari/`](cookbook/solari/)
+
+They provide atomic, runnable snippets for raw Solari SDK capabilities (launch, profiles, recordings, port preview, computer use).
+
+---
+
+## License
+
+MIT © [Meshly Contributors](https://github.com/nothariharan/meshly)

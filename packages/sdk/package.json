@@ -1,0 +1,15 @@
+{
+  "name": "@meshly/sdk",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Developer SDK for Meshly — The Operating Layer for Autonomous Workers",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@meshly/core": "*",
+    "@meshly/solari": "*"
+  }
+}

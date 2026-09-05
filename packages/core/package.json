@@ -1,0 +1,12 @@
+{
+  "name": "@meshly/core",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Core runtime and control plane for Meshly autonomous workers",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {}
+}

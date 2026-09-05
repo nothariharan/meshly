@@ -1,0 +1,15 @@
+{
+  "name": "@meshly/console",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Operator Console and Observability Dashboard for Meshly Autonomous Workers",
+  "main": "./src/server.ts",
+  "scripts": {
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@meshly/core": "*",
+    "@meshly/sdk": "*",
+    "@meshly/solari": "*"
+  }
+}
