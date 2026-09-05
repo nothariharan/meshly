@@ -1,6 +1,10 @@
 # Why Meshly?
 
-> **"Agents reason. Solari executes. Meshly governs the gap between the two."**
+> **Agents are probabilistic. Execution is stateful. Meshly makes the boundary between them explicit.**
+>
+> Meshly controls authority, environment allocation, lifecycle, context, verification, recovery, and commit semantics around autonomous workers.  
+> Solari provides the actual browser, sandbox, and desktop execution environments.  
+> Meshly ensures an agent cannot turn “the model said it worked” into “the world actually changed.”
 
 ---
 
@@ -13,7 +17,7 @@ Yet, despite intelligent models and capable environments, **autonomous worker sy
 When an engineering team attempts to transition from an interactive chatbot to an autonomous agent executing consequential multi-step tasks, failures emerge not from model intelligence, but from **governance and distributed systems failures**:
 
 1. **Delusion & Verification Gap**: An agent calls a payment tool, receives a network timeout, and either hallucinates that the payment failed (triggering a duplicate charge) or hallucinates that the payment succeeded (leaving invoices unpaid). The agent *claims* success, but the physical reality of the world diverged.
-2. **Authority & Privilege Escalation**: An agent tasked with reconciling invoices decides to delegate work to a sub-agent. Without mathematical isolation, the sub-agent inherits unconstrained toolsets, writes to unauthorized paths, or exfiltrates data to external endpoints.
+2. **Authority & Privilege Escalation**: An agent tasked with reconciling invoices decides to delegate work to a sub-agent. Without authority envelope isolation, the sub-agent inherits unconstrained toolsets, writes to unauthorized paths, or exfiltrates data to external endpoints.
 3. **Environment Volatility & State Loss**: An agent executing a 45-minute workflow across a browser and desktop loses connection when an underlying container cycles. The agent has no checkpointed state, no causal event lineage, and no warm-resume capability. The entire run must either restart from step zero or thrash indefinitely.
 4. **Thrashing Loops & Runaway Budgets**: A model encounters an unexpected modal dialogue or DOM variation and retries the identical tool call 40 times in a tight loop, exhausting budget ceilings and locking compute resources.
 
@@ -54,9 +58,9 @@ Meshly governs the contract, state, authority, verification, and causal timeline
 
 ---
 
-## 3. The 10 Invariants of Meshly
+## 3. 10 Runtime Invariants Enforced and Covered by the Test Suite
 
-Meshly guarantees 10 operational and mathematical invariants across every run:
+Meshly is architected as a **runtime kernel enforcing formally defined execution invariants**. The test suite explicitly exercises and verifies these 10 invariants across real failure scenarios:
 
 | Invariant | System Guarantee | Production Failure Prevented |
 | :--- | :--- | :--- |
@@ -91,4 +95,4 @@ Meshly treats Solari as a **first-class execution fabric**:
 
 Enterprises cannot adopt autonomous agents if they cannot trust their side effects. 
 
-By treating agents like untrusted distributed workers and governing them through mathematically bounded authority, independent reality verification, and content-addressed evidence bundles, **Meshly transforms fragile agent scripts into reliable enterprise infrastructure.**
+By treating agents like untrusted distributed workers and governing them through strictly bounded authority, independent reality verification, and content-addressed evidence bundles, **Meshly transforms fragile agent scripts into reliable enterprise infrastructure.**

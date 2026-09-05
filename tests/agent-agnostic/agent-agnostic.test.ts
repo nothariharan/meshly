@@ -78,8 +78,8 @@ export async function runAgentAgnosticTests(): Promise<{ passed: boolean }> {
     console.error("  ✗ MCP agent run failed:", run3.error)
   }
 
-  // 4. Model Handoff (Switching from Claude to GPT without restarting)
-  console.log("\n[Test 4] Dynamic Model Handoff (Claude Reasoning -> GPT Execution)...")
+  // 4. State-Preserving Model Handoff (Switching from Claude to GPT without losing state)
+  console.log("\n[Test 4] State-Preserving Model Handoff (Claude Reasoning -> GPT Execution)...")
   const claudeWorker = await mesh.spawn({
     task: "Analyze financial data and plan ledger entries",
     capabilities: ["browser", "sandbox"],
@@ -93,7 +93,7 @@ export async function runAgentAgnosticTests(): Promise<{ passed: boolean }> {
   const transferredPlan = mesh.memory.get(gptWorker.id, "plan_summary")
 
   if (transferredPlan?.value === "3 invoices to post" && gptWorker.context.currentStep === 1) {
-    console.log("  ✓ Model handoff preserved complete context, step index, and hot memories")
+    console.log("  ✓ State-preserving model handoff verified: preserved run state, step index, and hot memory")
   } else {
     passed = false
     console.error("  ✗ Model handoff dropped cognitive state!")

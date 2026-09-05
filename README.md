@@ -2,13 +2,44 @@
 
 ### **The Execution Control Layer for Autonomous Workers**
 
-> **RUN AGENTS LIKE INFRASTRUCTURE.**  
-> Schedule their compute. Preserve their state. Bound their authority. Verify their work.
+> **Agents are probabilistic. Execution is stateful. Meshly makes the boundary between them explicit.**
+>
+> Meshly controls authority, environment allocation, lifecycle, context, verification, recovery, and commit semantics around autonomous workers.  
+> Solari provides the actual browser, sandbox, and desktop execution environments.  
+> Meshly ensures an agent cannot turn “the model said it worked” into “the world actually changed.”
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Verified Runtime Kernel](https://img.shields.io/badge/Kernel-Verified%20Invariants-emerald.svg)]()
+[![Verified Runtime Kernel](https://img.shields.io/badge/Kernel-Tested%20Safety%20Invariants-emerald.svg)]()
 [![Solari Execution Fabric](https://img.shields.io/badge/Substrate-Solari%20Cloud-indigo.svg)](https://getsolari.com)
+
+---
+
+## The Signature Reality Check: Decoupling Claim from State
+
+The defining moment of Meshly happens when the model claims success, the tool returns HTTP 200, the external world disagrees, and Meshly visibly **halts and quarantines the commit**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ⚠️  REALITY DIVERGENCE DETECTED — UNVERIFIED COMMIT BLOCKED                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Agent Claim:     ✓ SUCCESS (Model reported invoice #INV-9821 settled)        │
+│ Solari / Tool:   ✓ SUCCESS (HTTP 200 OK returned by checkout gateway)        │
+│ Physical World:  ✗ MISMATCH (Ledger database status check returned UNPAID)   │
+│ Commit Status:   BLOCKED (Side effect quarantined; ledger uncorrupted)      │
+│ Tamper Digest:   SHA-256 047ce0a8d5ca0ee83f6d7a1b...                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ [ 🎮 Take Over Session ] [ 🔄 Retry Verification ] [ ⏪ SAGA Compensate ]    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+This single guarantee solves the #1 reason enterprises hesitate to deploy autonomous agents: **preventing unverified side effects from silently corrupting databases, ledgers, and external services.**
+
+Operators can:
+- **`Take Over`**: Attach an interactive terminal or VNC session directly to the active Solari lease without dropping context.
+- **`Retry`**: Re-evaluate or re-attempt the step with clean context.
+- **`Compensate`**: Dispatches compensating SAGA rollback actions in reverse order to undo prior committed mutations.
+- **`Inspect`**: View the cryptographic SHA-256 content-addressed evidence bundle.
 
 ---
 
@@ -44,7 +75,7 @@ If the physical world does not match the model's claim, **the commit is BLOCKED 
 │                         MESHLY EXECUTION CONTROL LAYER                      │
 │                                                                             │
 │   SCHEDULE       PERSIST        AUTHORIZE        VERIFY          RESUME     │
-│  Multi-factor   Zero-loss       Monotonic      Decoupled       Sub-second   │
+│  Multi-factor   State-preserving Monotonic      Decoupled       Sub-second   │
 │   priority &   context handoff  privilege      physical        microVM &    │
 │  warm pooling   & 3-tier memory bounds (⊆)   world contracts   VNC freeze   │
 └──────────────────────────────────────┬──────────────────────────────────────┘
@@ -61,9 +92,9 @@ If the physical world does not match the model's claim, **the commit is BLOCKED 
 
 ---
 
-## Guaranteed Runtime Invariants
+## 10 Runtime Invariants Enforced and Covered by the Test Suite
 
-Meshly is architected as a **verified execution control kernel**. It mathematically guarantees 10 operational invariants across all distributed runs:
+Meshly is architected as a **runtime kernel enforcing formally defined execution invariants**. The test suite explicitly exercises and verifies these 10 invariants across real failure scenarios:
 
 | Invariant | System Guarantee | Production Failure Prevented |
 | :--- | :--- | :--- |
@@ -77,32 +108,6 @@ Meshly is architected as a **verified execution control kernel**. It mathematica
 | **I8: Hard Spend Ceilings** | Financial spend caps are enforced synchronously at the execution barrier. | Runaway loops burning hundreds of dollars in API/compute fees. |
 | **I9: Exclusive Leases** | Environments are bound to exactly one worker lease at any point in time. | Cross-tenant data contamination, concurrent agent session collisions. |
 | **I10: Atomic Rollback** | Step failure dispatches compensating SAGA rollback actions in reverse order. | Partial database mutations and dirty environment states. |
-
----
-
-## The Signature Verification Failure Screen
-
-When an agent claims success but the physical environment diverged, Meshly's verification engine intercepts the step before unverified persistence. The **Operator Console** surfaces the exact divergence with immediate intervention controls:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ ⚠️  REALITY DIVERGENCE DETECTED — UNVERIFIED COMMIT BLOCKED                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ Agent Claim:     ✓ SUCCESS (Model declared invoice #INV-9821 settled)        │
-│ Tool Execution:  ✓ SUCCESS (HTTP 200 OK returned by checkout gateway)       │
-│ World State:     ✗ MISMATCH (Ledger database status check returned UNPAID)   │
-│ Commit Status:   BLOCKED (Side effect quarantined; ledger uncorrupted)      │
-│ Tamper Digest:   SHA-256 047ce0a8d5ca0ee83f6d7a1b...                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ [ 🎮 Take Over Session ] [ 🔄 Retry Verification ] [ ⏪ SAGA Compensate ]    │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-Operators can:
-- **`Take Over`**: Attach an interactive terminal or VNC session directly to the active Solari lease without dropping context.
-- **`Retry`**: Re-evaluate or re-attempt the step with clean context.
-- **`Compensate`**: Dispatches compensating SAGA rollback actions in reverse order.
-- **`Inspect`**: View the cryptographic SHA-256 content-addressed evidence bundle.
 
 ---
 
@@ -131,17 +136,21 @@ const run2 = await mesh.runWithAgent({
   maxSteps: 10,
 })
 
-// 3. Dynamic zero-loss model handoff (Claude Reasoning -> GPT Execution)
-const handoffWorker = await mesh.spawn({ task: "Multi-model orchestration" })
-handoffWorker.checkpointState(1)
-// Model B resumes from exact step index and hot memory with 0 context loss
+// 3. State-preserving model handoff (Claude Reasoning -> GPT Execution)
+const claudeWorker = await mesh.spawn({ task: "Multi-model orchestration" })
+claudeWorker.checkpointState(1)
+
+// Tested Claude -> GPT-4o handoff preserving run state, step index, authority context, and hot memory
+const gptWorker = await mesh.handoff(claudeWorker.id, "Execute posted entries")
 ```
 
 ---
 
-## 1,000-Worker High-Density Chaos Benchmark
+## 1,000-Worker Scheduler & Failure Simulation
 
-Meshly includes a built-in stress benchmark injecting 5% environment crashes, 3% network timeouts, 2% verification reality mismatches, and 1% authority policy escapes across 1,000 concurrent workers:
+Meshly includes a built-in stress benchmark evaluating scheduler queueing, multi-factor scoring, authority checks, and recovery from injected failures across 1,000 workers:
+
+> **Note on Concurrency**: 1,000 logical workers were dispatched through Meshly's runtime scheduler with injected failures (5% environment drops, 3% timeouts, 2% verification mismatches, 1% policy attacks). Physical Solari concurrency was intentionally simulated to avoid conflating scheduler scalability with infrastructure capacity. Live infrastructure concurrency benchmarking is run separately against provisioned Solari account limits.
 
 ```bash
 npm run cli -- benchmark 1000
@@ -150,23 +159,39 @@ npm run cli -- benchmark 1000
 ### Systems Scorecard Output:
 
 ```text
-================================================================================
- MESHLY HIGH-DENSITY CHAOS BENCHMARK (1,000 WORKERS)
- Systems Scorecard: Throughput, Invariants, and Distributed Resilience
-================================================================================
- Dispatched Workers:            1000
- Completed Successfully:        892
- Divergence Quarantines:        21 (commits blocked, 0 state leaks)
- Policy Violations Blocked:     11 (escalations neutralized before dispatch)
- Injected Environment Drops:    53 (recovered via warm pool recycling)
- Network Timeouts Handled:      34 (re-verified; 0 duplicate transactions)
- Total Execution Time:          84ms
- Throughput:                    11,904 workers/sec
- Orphan Environments Leaked:    0 (100% pool cleanup)
- State / Money Corrupted:       $0.00
- Invariant Adherence:           100.0% (10/10 Invariants Upheld)
-================================================================================
+==============================================================================
+ SIMULATION COMPLETE: SCHEDULER & RECOVERY SCORECARD
+==============================================================================
+ logical workers dispatched:  1000
+ dispatch mode:               Sequential scheduler loop (peak queue: 1000)
+ environment pool size:       35 (20 browsers, 10 sandboxes, 5 desktops)
+ warm reuse rate:             100%
+ mean scheduling latency:     1ms
+ verification failures:       13
+ recovered SAGA rollbacks:    13
+ orphan environments:         0
+ unverified commits:          0
+ total duration:              390ms
+==============================================================================
 ```
+
+---
+
+## Meshly × Solari: Real Execution Validation
+
+Meshly is built directly above Solari's unified cloud infrastructure. Solari provides:
+- **Unified API Surface**: One API key controls Cloud Browsers, MicroVM Sandboxes, and GUI Desktops.
+- **Session Replay & Live VNC**: Built-in video replays for browsers and live WebRTC/VNC streams for desktop sessions.
+- **Sub-Second Pause & Resume**: Sandboxes and desktops can pause, snapshot, and reconnect.
+- **Concurrency Management**: Real infrastructure limits and session lifecycle quotas enforced by Solari.
+
+### Real Execution Pipeline:
+
+$$\text{Worker} \xrightarrow{\text{Authority}} \text{Scheduler} \xrightarrow{\text{Lease}} \text{Solari Environment} \xrightarrow{\text{Action}} \text{Observation} \xrightarrow{\text{Verify}} \text{Commit}$$
+
+Capturing:
+
+$$\text{Run ID} \longrightarrow \text{Environment IDs} \longrightarrow \text{Timestamps} \longrightarrow \text{DOM/Stdout/Screenshots} \longrightarrow \text{State Diff} \longrightarrow \text{Verification Decision} \longrightarrow \text{Replay URL}$$
 
 ---
 
@@ -188,11 +213,11 @@ workflows/
   ├── browser-research/   Reference Workflow A: Stealth browser scraping & Python matrix
   └── desktop-operation/  Reference Workflow B: Legacy ERP accounting automation via VNC
 tests/
-  ├── invariants/         14 mathematical invariants + distributed edge case proofs
+  ├── invariants/         14 tested runtime invariants + distributed edge case proofs
   ├── failure/            Chaos engineering (crashes, timeouts, spend exhaustion)
   ├── security/           Red-team attacks (privilege escalation, egress bypass, unauthorized writes)
   ├── verification/       Reality engine tests (lying agent detection, SHA-256 digest validation)
-  ├── agent-agnostic/     Model independence (OpenAI, Claude, MCP, zero-loss handoffs)
+  ├── agent-agnostic/     Model independence (OpenAI, Claude, MCP, state-preserving handoffs)
   └── run-all.ts          Master test runner (8/8 test suites)
 cookbook/
   └── solari/             Upstream Solari Cookbook reference implementations
@@ -216,7 +241,7 @@ npm install
 npm test
 ```
 
-Verifies all mathematical invariants, failure chaos, malicious agent escapes, stupid agent safety, distributed edge cases, and agent-agnostic adapters:
+Verifies all tested safety invariants, failure chaos, malicious agent escapes, stupid agent safety, distributed edge cases, and agent-agnostic adapters:
 
 ```text
 ================================================================================
@@ -231,7 +256,7 @@ Verifies all mathematical invariants, failure chaos, malicious agent escapes, st
   7. Stupid Agent Safety:    ✓ PASSED (4/4 Delusion, Loop & Hallucination Defenses)
   8. Agent-Agnostic Adapters: ✓ PASSED (4/4 OpenAI, Claude, MCP & Model Handoffs)
 --------------------------------------------------------------------------------
-  TOTAL STATUS:              100% GREEN • VERIFIED RUNTIME KERNEL (PROVEN INVARIANTS)
+  TOTAL STATUS:              100% GREEN • VERIFIED RUNTIME KERNEL (TESTED SAFETY INVARIANTS)
 ================================================================================
 ```
 

@@ -21,8 +21,9 @@ export interface BenchmarkScorecard {
 export async function runBenchmark(mesh: Meshly, workerCount: number = 1000): Promise<BenchmarkScorecard> {
   const startTime = Date.now()
   console.log("\n" + "=".repeat(78))
-  console.log(` MESHLY INFRASTRUCTURE BENCHMARK (${workerCount} WORKERS)`)
+  console.log(` MESHLY SCHEDULER & FAILURE SIMULATION (${workerCount} LOGICAL WORKERS)`)
   console.log(" Chaos Injection: 5% Crashes, 3% Timeouts, 2% Divergences, 1% Policy Attacks")
+  console.log(" Note: Dispatched sequentially through scheduler; Solari concurrency simulated")
   console.log("=".repeat(78) + "\n")
 
   // Initialize warm pool (20 Browsers, 10 Sandboxes, 5 Desktops)
@@ -147,18 +148,18 @@ export async function runBenchmark(mesh: Meshly, workerCount: number = 1000): Pr
   }
 
   console.log("\n" + "=".repeat(78))
-  console.log(" BENCHMARK COMPLETE: INFRASTRUCTURE SCORECARD")
+  console.log(" SIMULATION COMPLETE: SCHEDULER & RECOVERY SCORECARD")
   console.log("=".repeat(78))
-  console.log(` workers:                 ${scorecard.totalWorkers}`)
-  console.log(` peak concurrent:          ${scorecard.peakConcurrent}`)
-  console.log(` environment utilization:  ${scorecard.environmentUtilizationPct}%`)
-  console.log(` warm reuse:               ${scorecard.warmReusePct}%`)
-  console.log(` mean scheduling latency:  ${scorecard.meanSchedulingLatencyMs}ms`)
-  console.log(` verification failures:   ${scorecard.verificationFailures}`)
-  console.log(` recovered:               ${scorecard.recoveredSagaRollbacks}`)
-  console.log(` orphan environments:      ${scorecard.orphanEnvironments}`)
-  console.log(` unverified commits:       ${scorecard.unverifiedCommits}`)
-  console.log(` total duration:          ${scorecard.durationMs}ms`)
+  console.log(` logical workers dispatched:  ${scorecard.totalWorkers}`)
+  console.log(` dispatch mode:               Sequential scheduler loop (peak queue: ${workerCount})`)
+  console.log(` environment pool size:       ${poolSpecs.length} (20 browsers, 10 sandboxes, 5 desktops)`)
+  console.log(` warm reuse rate:             ${scorecard.warmReusePct}%`)
+  console.log(` mean scheduling latency:     ${scorecard.meanSchedulingLatencyMs}ms`)
+  console.log(` verification failures:       ${scorecard.verificationFailures}`)
+  console.log(` recovered SAGA rollbacks:    ${scorecard.recoveredSagaRollbacks}`)
+  console.log(` orphan environments:         ${scorecard.orphanEnvironments}`)
+  console.log(` unverified commits:          ${scorecard.unverifiedCommits}`)
+  console.log(` total duration:              ${scorecard.durationMs}ms`)
   console.log("=".repeat(78) + "\n")
 
   return scorecard

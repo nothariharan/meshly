@@ -15,7 +15,7 @@ async function main() {
   const startTime = Date.now()
   console.log("\n" + "#".repeat(80))
   console.log("  MESHLY COMPREHENSIVE TEST SUITE RUNNER")
-  console.log("  Verifying all operational, mathematical, and architectural guarantees")
+  console.log("  Verifying all operational, safety, and architectural guarantees")
   console.log("#".repeat(80))
 
   const invariants = await runInvariantTests()
@@ -51,7 +51,7 @@ async function main() {
   console.log(`  7. Stupid Agent Safety:    ${stupidAgent.passed ? "✓ PASSED (4/4 Delusion, Loop & Hallucination Defenses)" : "✗ FAILED"}`)
   console.log(`  8. Agent-Agnostic Adapters: ${agentAgnostic.passed ? "✓ PASSED (4/4 OpenAI, Claude, MCP & Model Handoffs)" : "✗ FAILED"}`)
   console.log("-".repeat(80))
-  console.log(`  TOTAL STATUS:              ${allPassed ? "100% GREEN • VERIFIED RUNTIME KERNEL (PROVEN INVARIANTS)" : "FAILURES ENCOUNTERED"}`)
+  console.log(`  TOTAL STATUS:              ${allPassed ? "100% GREEN • VERIFIED RUNTIME KERNEL (TESTED SAFETY INVARIANTS)" : "FAILURES ENCOUNTERED"}`)
   console.log(`  ELAPSED TIME:              ${duration}ms`)
   console.log("=".repeat(80) + "\n")
 
