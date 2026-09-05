@@ -33,6 +33,12 @@ past. Copy one into your project and change the parts you care about.
 | --- | --- | --- |
 | [desktop-computer-use-py](examples/desktop-computer-use-py) | Python | Screenshot, click, and type on a Linux GUI |
 
+### Multi-primitive & Autonomous Workers
+
+| Example | Language | What it shows |
+| --- | --- | --- |
+| [meshly](examples/meshly) | TypeScript | Operating layer for autonomous workers: cross-primitive orchestration (Browser + Sandbox + Desktop), warm environment pooling, external reality verification, SAGA compensation, and cryptographic audit proofs |
+
 ## Running an example
 
 Each directory is self-contained.
