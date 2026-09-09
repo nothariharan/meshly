@@ -29,6 +29,7 @@ import { WorkerManager } from "./worker/manager.js"
 import { OperatorManager } from "./operator/operator.js"
 import { FailureInjector } from "./failure/injector.js"
 import { RunManager, RunInstance } from "./run/run.js"
+import { executeWorker, type ExecuteWorkerOptions } from "./execution/execute.js"
 
 export interface MeshlyConfig {
   executionFabric?: ExecutionFabric
@@ -278,6 +279,8 @@ export class MeshlyRuntime {
   async spawn(params: {
     task: string
     capabilities: Capability[]
+    name?: string
+    id?: string
     priority?: number
     deadline?: Date
     budget?: number
@@ -287,6 +290,14 @@ export class MeshlyRuntime {
     initialMemory?: Array<{ key: string; value: any; tier?: "hot" | "warm" | "cold" }>
   }): Promise<WorkerInstance> {
     return this.workers.spawn(params)
+  }
+
+  /**
+   * Run a spawned worker through Intent → Action → Observe → Verify → Commit
+   * on each requested environment.
+   */
+  async executeWorker(workerId: string, options: ExecuteWorkerOptions = {}): Promise<RunInstance> {
+    return executeWorker(this, workerId, options)
   }
 
   async scheduleNext(): Promise<{ worker?: WorkerInstance; lease?: EnvironmentLease; score?: number }> {
@@ -306,12 +317,14 @@ export class MeshlyRuntime {
    */
   async verifyStep(params: {
     workerId: string
+    runId?: string
     contract: VerificationContract
     executeAction: () => Promise<{ claimedSuccess?: boolean; [key: string]: any }>
     observeState: () => Promise<Record<string, any>>
   }): Promise<{ state: VerificationState; evidence?: EvidenceBundle }> {
     return Verifier.verifyStep({
       workerId: params.workerId,
+      runId: params.runId,
       contract: params.contract,
       executeAction: params.executeAction,
       observeState: params.observeState,

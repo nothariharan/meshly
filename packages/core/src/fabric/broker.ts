@@ -116,7 +116,7 @@ export class EnvironmentBroker {
     if (req.type === "browser") {
       resource = await this.fabric.launchBrowser({
         profileId: affinity.profile,
-        stealth: true,
+        stealth: false,
         recording: true,
       })
       env.replayUrl = resource.replayUrl
@@ -137,6 +137,9 @@ export class EnvironmentBroker {
     }
 
     env.handle = resource.handle
+    env.fabricId = resource.id
+    env.replayUrl = resource.replayUrl ?? env.replayUrl
+    env.streamUrl = resource.streamUrl ?? env.streamUrl
     env.status = "READY"
 
     const lease = this.createLease(req, env.id)
@@ -150,6 +153,7 @@ export class EnvironmentBroker {
       data: {
         type: env.type,
         profile: env.profile,
+        fabricId: env.fabricId,
         streamUrl: env.streamUrl,
         replayUrl: env.replayUrl,
       },

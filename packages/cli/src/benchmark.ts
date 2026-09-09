@@ -23,7 +23,7 @@ export async function runBenchmark(mesh: Meshly, workerCount: number = 1000): Pr
   console.log("\n" + "=".repeat(78))
   console.log(` MESHLY SCHEDULER & FAILURE SIMULATION (${workerCount} LOGICAL WORKERS)`)
   console.log(" Chaos Injection: 5% Crashes, 3% Timeouts, 2% Divergences, 1% Policy Attacks")
-  console.log(" Note: Dispatched sequentially through scheduler; Solari concurrency simulated")
+  console.log(" Note: Sequential scheduler simulation. Not a live Solari capacity test.")
   console.log("=".repeat(78) + "\n")
 
   // Initialize warm pool (20 Browsers, 10 Sandboxes, 5 Desktops)

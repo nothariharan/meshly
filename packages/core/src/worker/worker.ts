@@ -19,6 +19,7 @@ import { AuthorityManager, ActionIntent } from "../authority/authority.js"
 
 export class WorkerInstance implements IWorker {
   id: string
+  name?: string
   task: string
   status: WorkerStatus = "CREATED"
   priority: number
@@ -40,6 +41,7 @@ export class WorkerInstance implements IWorker {
 
   constructor(params: {
     id: string
+    name?: string
     task: string
     priority?: number
     deadline?: Date
@@ -51,6 +53,7 @@ export class WorkerInstance implements IWorker {
     mesh: any
   }) {
     this.id = params.id
+    this.name = params.name
     this.task = params.task
     this.priority = params.priority ?? 5
     this.deadline = params.deadline
@@ -182,6 +185,19 @@ export class WorkerInstance implements IWorker {
 
     this.verificationState = res.state
     return res
+  }
+
+  /**
+   * Execute this worker across its environment capabilities.
+   * Intent → Action → Observe → Verify → Commit, one step per environment.
+   */
+  async run(options?: {
+    artifactDir?: string
+    destroyAfter?: boolean
+    scenario?: "default" | "reality-divergence"
+    onProgress?: (run: import("../run/run.js").RunInstance) => void
+  }) {
+    return this.mesh.executeWorker(this.id, options)
   }
 
   async handoff(newTask: string): Promise<WorkerInstance> {

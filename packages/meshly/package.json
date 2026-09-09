@@ -1,0 +1,22 @@
+{
+  "name": "meshly",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Meshly CLI entry — npx meshly init",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nothariharan/meshly.git",
+    "directory": "packages/meshly"
+  },
+  "homepage": "https://github.com/nothariharan/meshly",
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
+  "bin": {
+    "meshly": "./bin/meshly.js"
+  },
+  "files": ["bin", "README.md", "LICENSE"],
+  "dependencies": {
+    "@meshly/cli": "0.1.0"
+  }
+}

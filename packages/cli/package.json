@@ -1,19 +1,34 @@
 {
   "name": "@meshly/cli",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "type": "module",
-  "description": "CLI interface for Meshly — The Operating Layer for Autonomous Workers",
+  "license": "MIT",
+  "description": "Meshly CLI — init, run, inspect, and operate autonomous workers.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nothariharan/meshly.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/nothariharan/meshly",
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
   "bin": {
-    "meshly": "./src/index.ts"
+    "meshly": "./dist/index.js"
   },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": { "build": "tsc -p tsconfig.json" },
   "dependencies": {
-    "@meshly/core": "*",
-    "@meshly/sdk": "*",
-    "@meshly/solari": "*"
+    "@meshly/console": "0.1.0",
+    "@meshly/core": "0.1.0",
+    "@meshly/sdk": "0.1.0",
+    "@meshly/solari": "0.1.0"
   }
 }

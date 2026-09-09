@@ -33,6 +33,7 @@ export type RunStatus =
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED"
+  | "BLOCKED"
   | "VERIFICATION_FAILED"
 
 export type EnvironmentType = "browser" | "sandbox" | "desktop"
@@ -110,6 +111,8 @@ export interface ExecutionEnvironment {
   id: string
   type: EnvironmentType
   status: EnvironmentStatus
+  /** Real Solari session / sandbox / desktop id when live. */
+  fabricId?: string
   owner?: string
   currentLeaseId?: string
   profile?: string
@@ -160,6 +163,7 @@ export interface WorkerContext {
 
 export interface Worker {
   id: string
+  name?: string
   task: string
   status: WorkerStatus
   priority: number
@@ -206,6 +210,13 @@ export interface ExecutionStep {
   evidence?: EvidenceBundle
   error?: string
   timestamp: number
+  /** Serializable verification contract used for this step (no compensate fn). */
+  contract?: {
+    intent: string
+    preconditions: VerificationCondition[]
+    postconditions: VerificationCondition[]
+    onFailure?: FailureStrategy
+  }
 }
 
 export interface Run {
@@ -307,8 +318,18 @@ export type EventType =
   | "action.denied"
   | "action.executed"
   | "observation.captured"
+  | "observation.recorded"
+  | "intent.created"
+  | "authority.approved"
+  | "solari.browser.created"
+  | "solari.sandbox.created"
+  | "solari.desktop.created"
+  | "verification.started"
   | "verification.passed"
   | "verification.failed"
+  | "commit.blocked"
+  | "commit.committed"
+  | "run.blocked"
   | "compensation.started"
   | "compensation.completed"
   | "checkpoint.created"
@@ -377,6 +398,7 @@ export interface FabricResource<T = any> {
   handle: T
   streamUrl?: string
   replayUrl?: string
+  recordingUrl?: string
 }
 
 export interface ExecutionFabric {

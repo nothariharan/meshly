@@ -1,314 +1,513 @@
 #!/usr/bin/env node
 /**
- * @meshly/cli - Command Line Interface
- * Control plane and operational inspector for autonomous workers.
+ * Meshly CLI — run autonomous workers without knowing the kernel.
+ *
+ *   meshly init
+ *   meshly worker create
+ *   meshly run
+ *   meshly inspect <run>
  */
 import fs from "node:fs"
 import path from "node:path"
 import { Meshly, AuthorityManager } from "@meshly/sdk"
+import type { RunInstance, WorkerInstance } from "@meshly/core"
 import { runBenchmark } from "./benchmark.js"
+import { loadEnv, requireSolariKey } from "./env.js"
+import { ProjectStore, type StoredRun, type StoredWorker } from "./store.js"
+import { runInit } from "./init.js"
+import { fileURLToPath } from "node:url"
 
-const meshly = new Meshly({ preferSimulator: true })
+loadEnv()
 
-async function runSimulation(mesh: Meshly, workerCount: number = 100) {
-  const startTime = Date.now()
-  console.log("\n" + "=".repeat(78))
-  console.log(` MESHLY: HIGH-DENSITY WORKER SCHEDULING SIMULATION (${workerCount} WORKERS)`)
-  console.log(" Demonstrating Multi-Factor Scoring, Warm Pooling, and Backpressure")
-  console.log("=".repeat(78) + "\n")
-
-  const initialPoolSpecs: Array<{ type: "browser" | "sandbox" | "desktop"; profile?: string }> = [
-    { type: "browser", profile: "salesforce-crm" },
-    { type: "browser", profile: "stripe-portal" },
-    { type: "browser" },
-    { type: "browser" },
-    { type: "browser" },
-    { type: "sandbox" },
-    { type: "sandbox" },
-    { type: "sandbox" },
-    { type: "desktop" },
-    { type: "desktop" },
-  ]
-
-  console.log(`[Simulator] Pre-warming ${initialPoolSpecs.length} shared Solari environments...`)
-  const dummyAuth = AuthorityManager.issue({ tools: ["*"] })
-  for (const spec of initialPoolSpecs) {
-    const lease = await mesh.broker.acquire({
-      workerId: "prewarm_bootstrap",
-      type: spec.type,
-      authority: dummyAuth,
-      budget: 1.0,
-      affinity: { profile: spec.profile },
-    })
-    await mesh.broker.release(lease.leaseId)
-  }
-  console.log(`✓ Pool initialized: 5 Browsers, 3 Sandboxes, 2 Desktops in IDLE warm state.\n`)
-
-  console.log(`[Simulator] Spawning ${workerCount} heterogeneous autonomous workers...`)
-  const tasks = [
-    { task: "Scrape pricing from competitor SaaS", caps: ["browser"], profile: "stripe-portal", priority: 7 },
-    { task: "Execute Python anomaly detection script", caps: ["sandbox"], priority: 5 },
-    { task: "Post journal entries in legacy desktop ERP", caps: ["desktop"], priority: 9 },
-    { task: "Verify billing dispute in CRM", caps: ["browser"], profile: "salesforce-crm", priority: 8 },
-    { task: "Run nightly database integrity batch", caps: ["sandbox"], priority: 4 },
-  ]
-
-  for (let i = 0; i < workerCount; i++) {
-    const template = tasks[i % tasks.length]
-    const priority = template.priority + (i % 3 === 0 ? 1 : 0)
-    const deadline = i % 5 === 0 ? new Date(Date.now() + 30_000) : undefined
-
-    await mesh.spawn({
-      task: `[Job #${i + 1}] ${template.task}`,
-      capabilities: template.caps as any,
-      priority,
-      deadline,
-      budget: 0.5,
-      metadata: { profile: template.profile },
-    })
-  }
-
-  const maxQueue = mesh.scheduler.getQueueLength()
-  console.log(`✓ ${workerCount} workers enqueued. Initial queue depth: ${maxQueue}\n`)
-
-  let completed = 0
-  let totalReuses = 0
-
-  console.log("[Simulator] Dispatching workers across pooled Solari environments...")
-  while (mesh.scheduler.getQueueLength() > 0 || mesh.scheduler.getActiveCount() > 0) {
-    const next = await mesh.scheduleNext()
-    if (next.worker && next.lease) {
-      const worker = next.worker
-      worker.deductSpend(0.01)
-
-      const env = mesh.broker.inspect(next.lease.environmentId)
-      if (env && env.lastActiveAt) {
-        totalReuses += 1
-      }
-
-      mesh.runtime.complete(worker.id)
-      completed += 1
-
-      if (completed % 25 === 0 || mesh.scheduler.getQueueLength() === 0) {
-        console.log(`   Processed ${completed}/${workerCount} workers (Queue: ${mesh.scheduler.getQueueLength()}, Active: ${mesh.scheduler.getActiveCount()})`)
+function parseArgs(argv: string[]): { command: string; rest: string[]; flags: Record<string, string | boolean> } {
+  const rest: string[] = []
+  const flags: Record<string, string | boolean> = {}
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (arg === "--") {
+      rest.push(...argv.slice(i + 1))
+      break
+    }
+    if (arg.startsWith("--")) {
+      const body = arg.slice(2)
+      const eq = body.indexOf("=")
+      if (eq >= 0) {
+        flags[body.slice(0, eq)] = body.slice(eq + 1)
+      } else {
+        const next = argv[i + 1]
+        if (next && !next.startsWith("-")) {
+          flags[body] = next
+          i += 1
+        } else {
+          flags[body] = true
+        }
       }
     } else {
-      break
+      rest.push(arg)
     }
   }
-
-  const duration = Date.now() - startTime
-  const stats = mesh.stats()
-
-  console.log("\n" + "=".repeat(78))
-  console.log(" SIMULATION COMPLETE: HIGH-DENSITY SCHEDULING BENCHMARK")
-  console.log("=".repeat(78))
-  console.log(` Total Workers Processed: ${completed}`)
-  console.log(` Max Queue Backpressure:  ${maxQueue}`)
-  console.log(` Environment Warm Reuses: ${totalReuses} (Eliminated cold-boot penalties)`)
-  console.log(` Execution Elapsed Time:  ${duration}ms`)
-  console.log(` Environments in Pool:    ${stats.environments.total} (All safely returned to IDLE)`)
-  console.log(` Unverified Writes:       0`)
-  console.log(` Orphan Environments:     0`)
-  console.log("=".repeat(78) + "\n")
+  return { command: rest[0] || "help", rest: rest.slice(1), flags }
 }
 
-async function main() {
-  const args = process.argv.slice(2)
-  const command = args[0] || "help"
-  const subcommand = args[1]
-  const targetId = args[2]
+function createClient(flags: Record<string, string | boolean>): Meshly {
+  const simulator = Boolean(flags.simulator)
+  if (simulator) {
+    return new Meshly({ preferSimulator: true })
+  }
+  requireSolariKey()
+  return new Meshly({
+    solariApiKey: process.env.SOLARI_API_KEY,
+    fallbackToSimulator: false,
+  })
+}
 
-  switch (command) {
-    case "workers": {
-      console.log("\n  ID            STATUS      TASK                                            SPENT")
-      console.log("  " + "-".repeat(72))
-      const workers = meshly.workers.list()
-      if (workers.length === 0) {
-        console.log("  (no workers currently spawned — run 'npm run simulate' or 'npm run demo')\n")
-        return
-      }
-      for (const w of workers) {
-        const idCol = w.id.padEnd(13)
-        const statusCol = w.status.padEnd(11)
-        const taskCol = (w.task.length > 44 ? w.task.slice(0, 41) + "..." : w.task).padEnd(47)
-        const spendCol = `$${w.budget.spent.toFixed(2)}`
-        console.log(`  ${idCol} ${statusCol} ${taskCol} ${spendCol}`)
-      }
-      console.log("")
-      break
+function flagList(value: string | boolean | undefined, fallback: string[]): string[] {
+  if (typeof value !== "string" || !value.trim()) return fallback
+  return value.split(",").map((s) => s.trim()).filter(Boolean)
+}
+
+function persistRun(
+  store: ProjectStore,
+  mesh: Meshly,
+  run: RunInstance,
+  worker: WorkerInstance,
+  destroyAfter = true,
+): StoredRun {
+  const stored = store.snapshotRun({
+    run,
+    worker: { id: worker.id, name: worker.name, task: worker.task },
+    mode: mesh.mode,
+    events: mesh.events.query({ runId: run.runId }),
+    destroyAfter,
+  })
+  persistWorkerSnapshot(store, worker, run.runId)
+  return stored
+}
+
+function persistWorkerSnapshot(store: ProjectStore, worker: WorkerInstance, runId?: string): StoredWorker {
+  const existing = store.getWorker(worker.id) || store.getWorker(worker.name || "")
+  const snapshot: StoredWorker = {
+    id: worker.id,
+    name: worker.name || existing?.name || worker.id,
+    task: worker.task,
+    capabilities: worker.capabilities,
+    priority: worker.priority,
+    budget: worker.budget.maxSpend,
+    spent: worker.budget.spent,
+    status: worker.status,
+    currentRunId: runId || worker.context.runId || existing?.currentRunId,
+    authority: {
+      tools: worker.authority.tools,
+      capabilities: worker.authority.capabilities,
+      domains: worker.authority.domains,
+      maxSpend: worker.authority.maxSpend,
+      writeAccess: worker.authority.writeAccess,
+    },
+    memory: (worker.memory || []).map((m) => ({ key: m.key, tier: m.tier, value: m.value })),
+    createdAt: existing?.createdAt || worker.createdAt.toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  store.saveWorker(snapshot)
+  return snapshot
+}
+
+function printRun(run: StoredRun): void {
+  console.log(`\nRUN ${run.runId}`)
+  console.log(`  Worker      ${run.workerName || run.workerId}`)
+  console.log(`  Status      ${run.status}`)
+  console.log(`  Mode        ${run.mode}`)
+  if (run.error) console.log(`  Error       ${run.error}`)
+  console.log("")
+  for (const step of run.steps) {
+    console.log(`  ${step.stepIndex}. ${String(step.status).toUpperCase().padEnd(11)} ${step.intent}`)
+    console.log(`     Intent → Action → Observe → Verify → ${step.status === "committed" ? "Commit" : "Blocked"}`)
+    if (step.observation?.fabricId) console.log(`     Solari ID  ${step.observation.fabricId}`)
+    if (step.observation?.title) console.log(`     Title      ${step.observation.title}`)
+    if (step.observation?.stdout) console.log(`     stdout     ${step.observation.stdout}`)
+    if (step.observation?.streamUrl) console.log(`     Stream     ${step.observation.streamUrl}`)
+    if (step.observation?.replayUrl) console.log(`     Replay     ${step.observation.replayUrl}`)
+    if (step.error) console.log(`     Error      ${step.error}`)
+    console.log("")
+  }
+  if (run.sha256Digest) console.log(`  Digest     ${run.sha256Digest}`)
+  console.log("")
+}
+
+async function cmdWorkerCreate(store: ProjectStore, rest: string[], flags: Record<string, string | boolean>): Promise<void> {
+  store.loadConfig()
+  const name = String(flags.name || rest[0] || "").trim()
+  const task = String(flags.task || rest.slice(name && rest[0] === name ? 1 : 0).join(" ") || "").trim()
+  if (!name || !task) {
+    console.error('Usage: meshly worker create --name <name> --task "<what to do>" [--capabilities browser,sandbox,desktop]')
+    process.exitCode = 1
+    return
+  }
+  if (store.getWorker(name)) {
+    console.error(`Worker '${name}' already exists.`)
+    process.exitCode = 1
+    return
+  }
+  const capabilities = flagList(flags.capabilities, ["browser"])
+  const worker = {
+    id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
+    name,
+    task,
+    capabilities,
+    priority: Number(flags.priority || 8),
+    budget: Number(flags.budget || 2),
+    spent: 0,
+    status: "CREATED",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  store.saveWorker(worker)
+  console.log(`\nCreated worker ${worker.name}`)
+  console.log(`  ID            ${worker.id}`)
+  console.log(`  Task          ${worker.task}`)
+  console.log(`  Environments  ${worker.capabilities.join(" · ")}`)
+  console.log(`\nRun it:\n  meshly run ${worker.name}\n`)
+}
+
+async function cmdWorkers(store: ProjectStore): Promise<void> {
+  store.loadConfig()
+  const workers = store.listWorkers()
+  if (workers.length === 0) {
+    console.log("\nNo workers. Create one:\n  meshly worker create --name research --task \"Open example.com\" --capabilities browser\n")
+    return
+  }
+  console.log("\n  NAME                    ID            ENVIRONMENTS")
+  console.log("  " + "-".repeat(72))
+  for (const w of workers) {
+    console.log(`  ${w.name.padEnd(23)} ${w.id.padEnd(13)} ${w.capabilities.join(",")}`)
+  }
+  console.log("")
+}
+
+async function cmdRun(store: ProjectStore, rest: string[], flags: Record<string, string | boolean>): Promise<void> {
+  store.loadConfig()
+  const target = rest[0]
+  if (!target) {
+    console.error("Usage: meshly run <worker-name-or-id>")
+    process.exitCode = 1
+    return
+  }
+  const definition = store.getWorker(target)
+  if (!definition) {
+    console.error(`Worker '${target}' not found.`)
+    process.exitCode = 1
+    return
+  }
+
+  const mesh = createClient(flags)
+  console.log(`\nMESHLY  mode=${mesh.mode}`)
+  console.log(`Worker  ${definition.name}`)
+  console.log(`Task    ${definition.task}`)
+  console.log(`Envs    ${definition.capabilities.join(" · ")}\n`)
+
+  const worker = await mesh.spawn({
+    id: definition.id,
+    name: definition.name,
+    task: definition.task,
+    capabilities: definition.capabilities,
+    priority: definition.priority,
+    budget: definition.budget,
+    authority: AuthorityManager.issue({
+      tools: ["browser_navigate", "sandbox_exec", "desktop_screenshot"],
+      capabilities: definition.capabilities,
+      domains: ["example.com"],
+      maxSpend: definition.budget,
+    }),
+  })
+
+  const destroyAfter = flags.keep ? false : true
+  const scenario = flags.diverge || flags.fail ? "reality-divergence" : "default"
+
+  const run = await worker.run({
+    artifactDir: store.artifactDir(),
+    destroyAfter,
+    scenario,
+    onProgress: (instance) => persistRun(store, mesh, instance, worker, instance.status === "RUNNING" ? false : destroyAfter),
+  })
+  const stored = persistRun(store, mesh, run, worker, destroyAfter)
+  printRun(stored)
+
+  if (run.status !== "COMPLETED") process.exitCode = 1
+}
+
+async function cmdLive(store: ProjectStore, flags: Record<string, string | boolean>): Promise<void> {
+  if (!store.exists()) store.init(path.basename(store.root))
+  const mesh = createClient(flags)
+  const capabilities = flagList(flags.capabilities, ["browser", "sandbox", "desktop"])
+  console.log(`\nMESHLY LIVE  mode=${mesh.mode}`)
+  console.log(`Probing Solari primitives: ${capabilities.join(" · ")}\n`)
+
+  const worker = await mesh.spawn({
+    name: "live-probe",
+    task: "Prove Meshly can lease, act, observe, verify, and commit on real Solari infrastructure",
+    capabilities,
+    budget: 2,
+    authority: AuthorityManager.issue({
+      tools: ["browser_navigate", "sandbox_exec", "desktop_screenshot"],
+      capabilities,
+      domains: ["example.com"],
+      maxSpend: 2,
+    }),
+  })
+
+  const run = await worker.run({
+    artifactDir: store.artifactDir(),
+    destroyAfter: true,
+    onProgress: (instance) => persistRun(store, mesh, instance, worker, instance.status === "RUNNING" ? false : true),
+  })
+  const stored = persistRun(store, mesh, run, worker, true)
+  printRun(stored)
+  if (run.status !== "COMPLETED") process.exitCode = 1
+}
+
+async function cmdFail(store: ProjectStore, flags: Record<string, string | boolean>): Promise<void> {
+  if (!store.exists()) store.init(path.basename(store.root))
+  const mesh = createClient(flags)
+  let definition = store.getWorker("reality-check")
+  if (!definition) {
+    definition = {
+      id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
+      name: "reality-check",
+      task: "Confirm invoice 4421 is paid",
+      capabilities: ["browser"],
+      priority: 8,
+      budget: 2,
+      spent: 0,
+      status: "CREATED",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }
+    store.saveWorker(definition)
+  }
 
-    case "worker": {
-      if (subcommand === "get" && targetId) {
-        const w = meshly.workers.get(targetId)
-        if (!w) {
-          console.error(`Worker '${targetId}' not found.`)
-          return
-        }
-        console.log(`\nWorker ${w.id}`)
-        console.log(`  Task:         ${w.task}`)
-        console.log(`  Status:       ${w.status}`)
-        console.log(`  Priority:     ${w.priority}`)
-        console.log(`  Budget:       $${w.budget.spent.toFixed(2)} / $${w.budget.maxSpend.toFixed(2)} ${w.budget.currency}`)
-        console.log(`  Capabilities: ${w.capabilities.join(", ")}`)
-        console.log(`  Current Step: ${w.context.currentStep}`)
-        console.log(`  Lease ID:     ${w.environmentLease?.leaseId || "none"}\n`)
-      } else if (subcommand === "pause" && targetId) {
-        await meshly.runtime.pause(targetId)
-        console.log(`✓ Worker ${targetId} paused (environment compute frozen).`)
-      } else if (subcommand === "resume" && targetId) {
-        await meshly.runtime.resume(targetId)
-        console.log(`✓ Worker ${targetId} resumed from snapshot.`)
-      } else if (subcommand === "cancel" && targetId) {
-        await meshly.runtime.cancel(targetId, "CLI command")
-        console.log(`✓ Worker ${targetId} cancelled (all descendants terminated).`)
-      } else {
-        console.log("Usage: meshly worker <get|pause|resume|cancel> <workerId>")
-      }
-      break
-    }
+  console.log(`\nMESHLY  mode=${mesh.mode}  scenario=reality-divergence`)
+  console.log(`Worker  ${definition.name}`)
+  console.log(`Task    ${definition.task}\n`)
+  console.log("Agent will claim success. Tool will return HTTP 200.")
+  console.log("Independent world check expects title: Invoice 4421 paid\n")
 
-    case "runs": {
-      console.log("\n  RUN ID              STATUS      OBJECTIVE                                       STEPS")
-      console.log("  " + "-".repeat(80))
-      const runs = meshly.runs.list()
-      if (runs.length === 0) {
-        console.log("  (no active runs — run a workflow via 'npm run workflow:reconciliation')\n")
-        return
-      }
-      for (const r of runs) {
-        const idCol = r.runId.padEnd(20)
-        const statusCol = r.status.padEnd(11)
-        const objCol = (r.objective.length > 44 ? r.objective.slice(0, 41) + "..." : r.objective).padEnd(47)
-        const stepsCol = `${r.steps.length} steps`
-        console.log(`  ${idCol} ${statusCol} ${objCol} ${stepsCol}`)
-      }
-      console.log("")
-      break
-    }
+  const worker = await mesh.spawn({
+    id: definition.id,
+    name: definition.name,
+    task: definition.task,
+    capabilities: ["browser"],
+    priority: definition.priority,
+    budget: definition.budget,
+    authority: AuthorityManager.issue({
+      tools: ["browser_navigate"],
+      capabilities: ["browser"],
+      domains: ["example.com"],
+      maxSpend: definition.budget,
+    }),
+  })
 
-    case "export": {
-      const runId = subcommand
-      if (!runId) {
-        console.error("Usage: meshly export <runId>")
-        return
-      }
+  const run = await worker.run({
+    artifactDir: store.artifactDir(),
+    destroyAfter: true,
+    scenario: "reality-divergence",
+    onProgress: (instance) => persistRun(store, mesh, instance, worker, instance.status === "RUNNING" ? false : true),
+  })
+  const stored = persistRun(store, mesh, run, worker, true)
+  printRun(stored)
+  if (run.status !== "BLOCKED") process.exitCode = 1
+}
 
-      let run = meshly.runs.get(runId)
-      if (!run) {
-        // Create mock run export for demonstration if ID not in memory
-        const worker = await meshly.spawn({
-          task: `Export target task for ${runId}`,
-          capabilities: ["browser", "sandbox"],
-        })
-        run = meshly.runs.create(worker, runId)
-        run.complete({
-          workerId: worker.id,
-          jobId: `job_${runId}`,
-          intent: "Exported run verification",
-          timestamp: Date.now(),
-          verified: true,
-          agentClaim: "SUCCESS",
-          worldStateMatch: true,
-          stateDiff: { before: { status: "INIT" }, after: { status: "COMMITTED" } },
-          replays: { browser: "https://console.getsolari.com/replays/sim_1" },
-          tamperEvidentDigestSha256: "eea290f14b62881a70098df2401bcde99a",
-        })
-      }
+async function cmdRuns(store: ProjectStore): Promise<void> {
+  store.loadConfig()
+  const runs = store.listRuns()
+  if (runs.length === 0) {
+    console.log("\nNo runs yet. `meshly run <worker>` or `meshly live`\n")
+    return
+  }
+  console.log("\n  RUN ID                         STATUS      MODE        WORKER")
+  console.log("  " + "-".repeat(78))
+  for (const r of runs) {
+    console.log(
+      `  ${r.runId.padEnd(30)} ${r.status.padEnd(11)} ${r.mode.padEnd(11)} ${r.workerName || r.workerId}`,
+    )
+  }
+  console.log("")
+}
 
-      const bundle = run.exportBundle()
-      const exportDir = path.resolve(process.cwd(), "exports", runId)
-      fs.mkdirSync(exportDir, { recursive: true })
+async function cmdInspect(store: ProjectStore, rest: string[]): Promise<void> {
+  store.loadConfig()
+  const id = rest[0]
+  if (!id) {
+    console.error("Usage: meshly inspect <runId>")
+    process.exitCode = 1
+    return
+  }
+  const run = store.getRun(id)
+  if (!run) {
+    console.error(`Run '${id}' not found.`)
+    process.exitCode = 1
+    return
+  }
+  printRun(run)
+}
 
-      fs.writeFileSync(path.join(exportDir, "run.json"), JSON.stringify(bundle.run, null, 2))
-      fs.writeFileSync(path.join(exportDir, "state-diff.json"), JSON.stringify(bundle.stateDiff, null, 2))
-      fs.writeFileSync(path.join(exportDir, "authority.json"), JSON.stringify(bundle.authority, null, 2))
-      if (bundle.evidence) {
-        fs.writeFileSync(path.join(exportDir, "evidence.json"), JSON.stringify(bundle.evidence, null, 2))
-      }
+async function cmdReplay(store: ProjectStore, rest: string[]): Promise<void> {
+  store.loadConfig()
+  const id = rest[0]
+  if (!id) {
+    console.error("Usage: meshly replay <runId>")
+    process.exitCode = 1
+    return
+  }
+  const run = store.getRun(id)
+  if (!run) {
+    console.error(`Run '${id}' not found.`)
+    process.exitCode = 1
+    return
+  }
+  const links = [
+    ...run.environments.map((e) => e.replayUrl || e.streamUrl).filter(Boolean),
+    ...run.steps.flatMap((s) => [s.observation?.replayUrl, s.observation?.streamUrl, s.observation?.browser_replay_url]).filter(Boolean),
+  ]
+  if (links.length === 0) {
+    console.log("\nNo replay or stream URL on this run. Live browser replays are issued after session release.\n")
+    return
+  }
+  console.log("\nReplay / stream URLs")
+  for (const link of Array.from(new Set(links))) console.log(`  ${link}`)
+  console.log("")
+}
 
-      const eventsJsonl = bundle.events.map((e) => JSON.stringify(e)).join("\n")
-      fs.writeFileSync(path.join(exportDir, "events.jsonl"), eventsJsonl)
+async function cmdExport(store: ProjectStore, rest: string[]): Promise<void> {
+  store.loadConfig()
+  const id = rest[0]
+  if (!id) {
+    console.error("Usage: meshly export <runId>")
+    process.exitCode = 1
+    return
+  }
+  const run = store.getRun(id)
+  if (!run) {
+    console.error(`Run '${id}' not found.`)
+    process.exitCode = 1
+    return
+  }
+  const exportDir = path.resolve(store.root, "exports", run.runId)
+  fs.mkdirSync(exportDir, { recursive: true })
+  fs.writeFileSync(path.join(exportDir, "run.json"), JSON.stringify(run, null, 2))
+  fs.writeFileSync(
+    path.join(exportDir, "evidence.json"),
+    JSON.stringify(run.evidence || {}, null, 2),
+  )
+  console.log(`\nExported ${run.runId} → ${exportDir}\n`)
+}
 
-      console.log(`\n✓ Tamper-Evident Evidence Bundle Exported to: ${exportDir}`)
-      console.log(`  Run ID:        ${runId}`)
-      console.log(`  SHA-256 Check: ${bundle.sha256Digest}`)
-      console.log(`  Files:         run.json, events.jsonl, state-diff.json, authority.json, evidence.json\n`)
-      break
-    }
+function help(): void {
+  console.log(`
+Meshly — the operating system for autonomous workers.
 
-    case "environments": {
-      console.log("\n  ID                  TYPE      STATUS    PROFILE             LEASE ID")
-      console.log("  " + "-".repeat(72))
-      const envs = meshly.broker.list()
-      if (envs.length === 0) {
-        console.log("  (no environments currently allocated in pool)\n")
-        return
-      }
-      for (const e of envs) {
-        const idCol = e.id.padEnd(20)
-        const typeCol = e.type.padEnd(9)
-        const statusCol = e.status.padEnd(9)
-        const profileCol = (e.profile || "-").padEnd(19)
-        const leaseCol = e.currentLeaseId || "-"
-        console.log(`  ${idCol} ${typeCol} ${statusCol} ${profileCol} ${leaseCol}`)
-      }
-      console.log("")
-      break
-    }
-
-    case "benchmark": {
-      const count = parseInt(subcommand || "1000", 10)
-      await runBenchmark(meshly, count)
-      break
-    }
-
-    case "simulate": {
-      const count = parseInt(subcommand || "100", 10)
-      await runSimulation(meshly, count)
-      break
-    }
-
-    case "events": {
-      console.log("\n  SEQ   EVENT ID            TYPE                     WORKER ID")
-      console.log("  " + "-".repeat(66))
-      const events = meshly.events.query({ limit: 15 })
-      for (const evt of events) {
-        const seqCol = String(evt.sequence || 0).padEnd(5)
-        const idCol = evt.id.padEnd(19)
-        const typeCol = evt.type.padEnd(24)
-        const workerCol = evt.workerId || "-"
-        console.log(`  ${seqCol} ${idCol} ${typeCol} ${workerCol}`)
-      }
-      console.log("")
-      break
-    }
-
-    case "help":
-    default: {
-      console.log(`
-Meshly CLI — The Execution Control Layer for Autonomous Workers
+  wsp manages where an agent works.
+  Meshly manages how autonomous work executes safely.
 
 Usage:
-  meshly workers                     List all workers and statuses
-  meshly worker get <id>             Inspect worker state and context
-  meshly worker pause <id>           Freeze worker and leased environment
-  meshly worker resume <id>          Resume worker compute from snapshot
-  meshly worker cancel <id>          Cancel worker and cascade to children
-  meshly runs                        List all first-class runs
-  meshly export <runId>              Export tamper-evident evidence bundle to disk
-  meshly environments                List pooled Cloud Browsers, Sandboxes, Desktops
-  meshly events                      View audit events with monotonic sequence numbers
-  meshly benchmark [count]           Run 1,000-worker chaos stress benchmark (default: 1000)
-  meshly simulate [count]            Run high-density scheduling simulation (default: 100)
+  meshly init [--provider solari|simulator] [--yes]
+  meshly dev [--port 3400]
+  meshly worker create --name <name> --task "<task>" [--capabilities browser,sandbox,desktop]
+  meshly workers
+  meshly run <worker> [--simulator]
+  meshly runs
+  meshly inspect <run>
+  meshly replay <run>
+  meshly export <run>
+  meshly live [--simulator] [--capabilities browser,sandbox,desktop]
+  meshly fail [--simulator]           Reality-divergence demo (commit BLOCKED)
+
+Kernel / research (not the product loop):
+  meshly simulate [count]            Scheduler simulation
+  meshly benchmark [count]           1,000-worker scheduler simulation
+
+Live Solari is the default. Pass --simulator to run the kernel without credits.
 `)
+}
+
+export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const { command, rest, flags } = parseArgs(argv)
+  const store = new ProjectStore()
+
+  switch (command) {
+    case "init":
+      await runInit(store, rest, flags)
+      break
+    case "dev": {
+      const { startConsole } = await import("@meshly/console")
+      const port = Number(flags.port || process.env.PORT || 3400)
+      startConsole({ port, cwd: store.root })
+      return
+    }
+    case "worker":
+      if (rest[0] === "create") await cmdWorkerCreate(store, rest.slice(1), flags)
+      else if (rest[0] === "get" && rest[1]) {
+        const w = store.getWorker(rest[1])
+        console.log(w ? JSON.stringify(w, null, 2) : `Worker '${rest[1]}' not found.`)
+      } else {
+        console.log("Usage: meshly worker create --name <name> --task \"<task>\"")
+      }
+      break
+    case "workers":
+      await cmdWorkers(store)
+      break
+    case "run":
+      await cmdRun(store, rest, flags)
+      break
+    case "runs":
+      await cmdRuns(store)
+      break
+    case "inspect":
+      await cmdInspect(store, rest)
+      break
+    case "replay":
+      await cmdReplay(store, rest)
+      break
+    case "export":
+      await cmdExport(store, rest)
+      break
+    case "live":
+      await cmdLive(store, flags)
+      break
+    case "fail":
+      await cmdFail(store, flags)
+      break
+    case "simulate": {
+      const mesh = new Meshly({ preferSimulator: true })
+      const { runSimulation } = await import("./simulate.js")
+      await runSimulation(mesh, parseInt(rest[0] || "100", 10))
       break
     }
+    case "benchmark": {
+      const mesh = new Meshly({ preferSimulator: true })
+      await runBenchmark(mesh, parseInt(rest[0] || "1000", 10))
+      break
+    }
+    case "help":
+    default:
+      help()
+      if (command !== "help") process.exitCode = 1
   }
 }
 
-main().catch((err) => {
-  console.error("Meshly CLI error:", err)
-  process.exit(1)
-})
+function isDirectRun(): boolean {
+  const entry = process.argv[1]
+  if (!entry) return false
+  const self = fileURLToPath(import.meta.url)
+  try {
+    return fs.realpathSync(entry).toLowerCase() === fs.realpathSync(self).toLowerCase()
+  } catch {
+    return path.normalize(path.resolve(entry)).toLowerCase() === path.normalize(self).toLowerCase()
+  }
+}
+
+if (isDirectRun()) {
+  runCli(process.argv.slice(2)).catch((err) => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })
+}

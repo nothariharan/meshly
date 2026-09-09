@@ -143,6 +143,23 @@ export class RunInstance implements Run {
     })
   }
 
+  /** Verification mismatch: claim is not reality. Commit does not proceed. */
+  block(error?: string): void {
+    this.status = "BLOCKED"
+    this.completedAt = Date.now()
+    this.error = error
+    this.eventStore.emit("run.blocked", {
+      runId: this.runId,
+      workerId: this.workerId,
+      data: { error },
+    })
+    this.eventStore.emit("commit.blocked", {
+      runId: this.runId,
+      workerId: this.workerId,
+      data: { error },
+    })
+  }
+
   /**
    * Export Tamper-Evident Evidence Bundle
    */

@@ -16,6 +16,8 @@ export class WorkerManager {
   async spawn(params: {
     task: string
     capabilities: Capability[]
+    name?: string
+    id?: string
     priority?: number
     deadline?: Date
     budget?: number
@@ -24,7 +26,7 @@ export class WorkerManager {
     metadata?: Record<string, any>
     initialMemory?: Array<{ key: string; value: any; tier?: "hot" | "warm" | "cold" }>
   }): Promise<WorkerInstance> {
-    const workerId = `wrk_${Math.random().toString(36).slice(2, 9)}`
+    const workerId = params.id || `wrk_${Math.random().toString(36).slice(2, 9)}`
 
     const auth =
       params.authority ??
@@ -38,9 +40,13 @@ export class WorkerManager {
     if (params.metadata) {
       ctx.metadata = { ...params.metadata }
     }
+    if (params.name) {
+      ctx.metadata = { ...ctx.metadata, name: params.name }
+    }
 
     const worker = new WorkerInstance({
       id: workerId,
+      name: params.name,
       task: params.task,
       priority: params.priority ?? 5,
       deadline: params.deadline,
@@ -76,6 +82,10 @@ export class WorkerManager {
 
   get(workerId: string): WorkerInstance | undefined {
     return this.workers.get(workerId)
+  }
+
+  find(nameOrId: string): WorkerInstance | undefined {
+    return this.workers.get(nameOrId) || this.list().find((w) => w.name === nameOrId)
   }
 
   list(): WorkerInstance[] {

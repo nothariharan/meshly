@@ -10,13 +10,14 @@ import { EventStore } from "../events/events.js"
 export class Verifier {
   static async verifyStep(params: {
     workerId: string
+    runId?: string
     contract: VerificationContract
     executeAction: () => Promise<{ claimedSuccess?: boolean; [key: string]: any }>
     observeState: () => Promise<Record<string, any>>
     events?: EventStore
   }): Promise<{ state: VerificationState; evidence?: EvidenceBundle }> {
     const timestamp = Date.now()
-    const { workerId, contract, executeAction, observeState, events } = params
+    const { workerId, runId, contract, executeAction, observeState, events } = params
 
     // 1. Observe Pre-State
     const initialObservation = await observeState()
@@ -44,9 +45,17 @@ export class Verifier {
       }
 
       if (events) {
-        events.emit("verification.failed", { workerId, data: { reason: preFailureReason, stage: "precondition" } })
+        events.emit("verification.failed", { workerId, runId, data: { reason: preFailureReason, stage: "precondition" } })
       }
       return { state: failState }
+    }
+
+    if (events) {
+      events.emit("verification.started", {
+        workerId,
+        runId,
+        data: { intent: contract.intent },
+      })
     }
 
     // 2. Execute Action
@@ -63,10 +72,10 @@ export class Verifier {
       agentClaimSuccess = false
 
       if (contract.compensate) {
-        if (events) events.emit("compensation.started", { workerId, data: { error: err.message } })
+        if (events) events.emit("compensation.started", { workerId, runId, data: { error: err.message } })
         try {
           await contract.compensate({ error: err.message, initialObservation })
-          if (events) events.emit("compensation.completed", { workerId, data: { recovered: true } })
+          if (events) events.emit("compensation.completed", { workerId, runId, data: { recovered: true } })
         } catch (compErr) {
           console.error("[Meshly Verifier] Compensation error:", compErr)
         }
@@ -83,7 +92,7 @@ export class Verifier {
       }
 
       if (events) {
-        events.emit("verification.failed", { workerId, data: { error: err.message, stage: "action_execution" } })
+        events.emit("verification.failed", { workerId, runId, data: { error: err.message, stage: "action_execution" } })
       }
       return { state: excState }
     }
@@ -104,10 +113,10 @@ export class Verifier {
 
     if (!postPassed) {
       if (contract.compensate) {
-        if (events) events.emit("compensation.started", { workerId, data: { reason: mismatchDetail } })
+        if (events) events.emit("compensation.started", { workerId, runId, data: { reason: mismatchDetail } })
         try {
           await contract.compensate({ reason: mismatchDetail, pre: initialObservation, post: postObservation })
-          if (events) events.emit("compensation.completed", { workerId, data: { compensated: true } })
+          if (events) events.emit("compensation.completed", { workerId, runId, data: { compensated: true } })
         } catch (compErr) {
           console.error("[Meshly Verifier] Compensation error:", compErr)
         }
@@ -126,6 +135,7 @@ export class Verifier {
       if (events) {
         events.emit("verification.failed", {
           workerId,
+          runId,
           data: {
             reason: mismatchDetail,
             agentClaim: divergenceState.agentClaim,
@@ -181,11 +191,16 @@ export class Verifier {
     if (events) {
       events.emit("verification.passed", {
         workerId,
+        runId,
         data: { intent: contract.intent, digest: tamperEvidentDigestSha256 },
       })
     }
 
     return { state: successState, evidence }
+  }
+
+  static matchesCondition(cond: VerificationCondition, actual: any): boolean {
+    return this.matches(cond, actual)
   }
 
   private static matches(cond: VerificationCondition, actual: any): boolean {

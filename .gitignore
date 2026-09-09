@@ -1,6 +1,10 @@
 node_modules/
 package-lock.json
 .env
+.meshly/
+exports/
+dist/
+*.tgz
 __pycache__/
 *.pyc
 .venv/

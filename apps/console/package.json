@@ -1,15 +1,52 @@
 {
   "name": "@meshly/console",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "type": "module",
-  "description": "Operator Console and Observability Dashboard for Meshly Autonomous Workers",
-  "main": "./src/server.ts",
+  "license": "MIT",
+  "description": "Local Meshly operator console.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nothariharan/meshly.git",
+    "directory": "apps/console"
+  },
+  "homepage": "https://github.com/nothariharan/meshly",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "start": "tsx src/server.ts"
+    "build": "tsc -p tsconfig.json && vite build",
+    "start": "node dist/server.js"
   },
   "dependencies": {
-    "@meshly/core": "*",
-    "@meshly/sdk": "*",
-    "@meshly/solari": "*"
+    "@meshly/core": "0.1.0",
+    "@meshly/sdk": "0.1.0",
+    "@meshly/solari": "0.1.0"
+  },
+  "devDependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^7.3.6"
   }
 }

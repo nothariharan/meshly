@@ -38,6 +38,21 @@ export class Scheduler {
     })
   }
 
+  /**
+   * Take a queued worker into the active set without allocating an environment.
+   * Used by executeWorker, which leases environments itself.
+   */
+  claim(workerId: string): Worker | undefined {
+    const idx = this.queue.findIndex((w) => w.id === workerId)
+    if (idx !== -1) {
+      const worker = this.queue.splice(idx, 1)[0]
+      worker.status = "RUNNING"
+      this.activeWorkers.set(workerId, worker)
+      return worker
+    }
+    return this.activeWorkers.get(workerId)
+  }
+
   calculateScore(worker: Worker): ScheduleCandidate {
     let score = worker.priority * 20
     const reasons: string[] = [`✓ Base priority: ${worker.priority} (weight +${worker.priority * 20})`]

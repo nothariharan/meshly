@@ -1,6 +1,9 @@
 /**
- * @meshly/sdk - The Unified Developer SDK for Meshly
- * Run agents like infrastructure. Schedule their compute. Preserve their state. Control their authority. Verify their work.
+ * @meshly/sdk — developer surface for the autonomous worker OS.
+ *
+ * const mesh = new Meshly({ execution: new Solari({ apiKey }) })
+ * const worker = await mesh.spawn({ task, capabilities })
+ * const run = await worker.run()
  */
 import {
   MeshlyRuntime,
@@ -25,32 +28,46 @@ export interface MeshlyClientOptions extends MeshlyConfig {
   execution?: ExecutionFabric
   solariApiKey?: string
   preferSimulator?: boolean
+  /** When live Solari fails, fall back to the simulator. Default false. */
+  fallbackToSimulator?: boolean
 }
 
 export class Meshly {
   public readonly runtime: MeshlyRuntime
+  public readonly mode: "live" | "simulator"
 
   constructor(options: MeshlyClientOptions = {}) {
     let fabric: ExecutionFabric
+    let mode: "live" | "simulator" = "simulator"
 
     if (options.execution) {
       fabric = options.execution
+      mode = fabric.name.includes("simulator") ? "simulator" : "live"
     } else if (options.executionFabric) {
       fabric = options.executionFabric
+      mode = fabric.name.includes("simulator") ? "simulator" : "live"
     } else if (options.preferSimulator) {
       fabric = new SimulatorExecutionFabric()
     } else {
       const apiKey = options.solariApiKey || process.env.SOLARI_API_KEY
-      fabric = new SolariExecutionFabric({ apiKey, fallbackToSimulator: true })
+      if (!apiKey) {
+        fabric = new SimulatorExecutionFabric()
+      } else {
+        fabric = new SolariExecutionFabric({
+          apiKey,
+          fallbackToSimulator: options.fallbackToSimulator ?? false,
+        })
+        mode = "live"
+      }
     }
 
+    this.mode = mode
     this.runtime = new MeshlyRuntime({
       ...options,
       executionFabric: fabric,
     })
   }
 
-  // Gateway access to core subsystems
   get events() {
     return this.runtime.events
   }
@@ -99,26 +116,31 @@ export class Meshly {
     return this.runtime.workflow
   }
 
-  /**
-   * First-Class Run Execution:
-   * const run = await mesh.run({ task, capabilities, workflow })
-   */
   async run(params: {
     task: string
     capabilities: Capability[]
+    name?: string
     priority?: number
     budget?: number
     authority?: Authority
     workflow?: WorkflowDef
     metadata?: Record<string, any>
   }): Promise<RunInstance> {
-    return this.runtime.run(params)
+    if (params.workflow) {
+      return this.runtime.run(params)
+    }
+    const worker = await this.spawn({
+      task: params.task,
+      capabilities: params.capabilities,
+      name: params.name,
+      priority: params.priority,
+      budget: params.budget,
+      authority: params.authority,
+      metadata: params.metadata,
+    })
+    return worker.run()
   }
 
-  /**
-   * Agent-Agnostic Execution:
-   * const run = await mesh.runWithAgent({ adapter, task, capabilities })
-   */
   async runWithAgent(params: {
     adapter: AgentAdapter
     task: string
@@ -132,10 +154,11 @@ export class Meshly {
     return this.runtime.runWithAgent(params)
   }
 
-  // Core Ergonomics
   async spawn(params: {
     task: string
     capabilities: Capability[]
+    name?: string
+    id?: string
     priority?: number
     deadline?: Date
     budget?: number
@@ -147,12 +170,25 @@ export class Meshly {
     return this.runtime.spawn(params)
   }
 
+  async execute(
+    workerId: string,
+    options?: {
+      artifactDir?: string
+      destroyAfter?: boolean
+      scenario?: "default" | "reality-divergence"
+      onProgress?: (run: RunInstance) => void
+    },
+  ): Promise<RunInstance> {
+    return this.runtime.executeWorker(workerId, options)
+  }
+
   async scheduleNext(): Promise<{ worker?: WorkerInstance; lease?: EnvironmentLease; score?: number }> {
     return this.runtime.scheduleNext()
   }
 
   async verifyStep(params: {
     workerId: string
+    runId?: string
     contract: VerificationContract
     executeAction: () => Promise<{ claimedSuccess?: boolean; [key: string]: any }>
     observeState: () => Promise<Record<string, any>>
@@ -173,7 +209,6 @@ export class Meshly {
   }
 }
 
-// Re-export all core modules and solari adapter
 export * from "@meshly/core"
 export * from "@meshly/solari"
 export default Meshly

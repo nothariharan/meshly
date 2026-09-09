@@ -20,9 +20,14 @@ export class SimulatorExecutionFabric implements ExecutionFabric {
       id,
       options,
       newPage: async () => ({
-        goto: async (url: string) => console.log(`[SimulatorFabric] Browser navigating to ${url}`),
-        title: async () => "Simulated Page",
-        content: async () => `<html><body><h1>Verified Target</h1><div id="state">LOADED</div></body></html>`,
+        goto: async (url: string) => {
+          console.log(`[SimulatorFabric] Browser navigating to ${url}`)
+          return { url }
+        },
+        title: async () => "Example Domain",
+        url: () => "https://example.com/",
+        screenshot: async () => Buffer.from("sim-browser-screenshot"),
+        content: async () => `<html><body><h1>Example Domain</h1><div id="state">LOADED</div></body></html>`,
         evaluate: async (fn: any) => fn(),
       }),
       close: async () => console.log(`[SimulatorFabric] Browser ${id} closed.`),
@@ -42,11 +47,13 @@ export class SimulatorExecutionFabric implements ExecutionFabric {
     const id = `sim_sandbox_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
     const mockSandbox = {
       id,
+      sandboxId: id,
       options,
+      connect: async () => undefined,
       commands: {
         run: async (cmd: string, opts: any) => {
           console.log(`[SimulatorFabric] Sandbox executing: ${cmd} ${opts?.args?.join(" ") || ""}`)
-          return { exitCode: 0, stdout: JSON.stringify({ verified: true, exitCode: 0 }) }
+          return { exitCode: 0, stdout: "4\n", stderr: "" }
         },
       },
       files: {
@@ -69,7 +76,10 @@ export class SimulatorExecutionFabric implements ExecutionFabric {
     const id = `sim_desktop_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
     const mockDesktop = {
       id,
+      sessionId: id,
       options,
+      connect: async () => undefined,
+      health: async () => ({ ready: true, display: true, vnc: true }),
       open: async (app: string) => console.log(`[SimulatorFabric] Desktop opened app: ${app}`),
       mouse: {
         click: async (x: number, y: number) => console.log(`[SimulatorFabric] Clicked (${x}, ${y})`),
