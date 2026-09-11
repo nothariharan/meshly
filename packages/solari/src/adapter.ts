@@ -160,6 +160,36 @@ export class SolariExecutionFabric implements ExecutionFabric {
     }
   }
 
+  async reconnect(id: string, type: "browser" | "sandbox" | "desktop"): Promise<FabricResource> {
+    if (!this.apiKey) {
+      if (this.fallbackToSimulator) return this.simulator.reconnect!(id, type)
+      throw new SolariFabricError(`Cannot reconnect ${type} ${id} without SOLARI_API_KEY`, { code: "MissingApiKey" })
+    }
+    try {
+      if (type === "sandbox") {
+        const client = await this.vm()
+        const sandbox = await client.sandboxes.connect(id)
+        await sandbox.connect?.()
+        return { id: sandbox.sandboxId || sandbox.id || id, type: "sandbox", handle: sandbox }
+      }
+      if (type === "desktop") {
+        const client = await this.vm()
+        const desktop = await client.desktops.connect(id)
+        return {
+          id: desktop.sessionId || desktop.id || id,
+          type: "desktop",
+          handle: desktop,
+          streamUrl: desktop.streamUrl,
+          recordingUrl: desktop.recordingUrl,
+        }
+      }
+      throw new SolariFabricError(`Browser sessions cannot be reconnected after close (${id})`, { code: "BrowserGone" })
+    } catch (err) {
+      if (this.fallbackToSimulator) return this.simulator.reconnect!(id, type)
+      throw wrapSolariError(err, `Failed to reconnect ${type} ${id}`)
+    }
+  }
+
   /**
    * Replay URLs are issued after the browser session is released.
    */

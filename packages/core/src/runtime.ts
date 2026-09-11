@@ -30,12 +30,16 @@ import { OperatorManager } from "./operator/operator.js"
 import { FailureInjector } from "./failure/injector.js"
 import { RunManager, RunInstance } from "./run/run.js"
 import { executeWorker, type ExecuteWorkerOptions } from "./execution/execute.js"
+import { persistRuntime, restoreRuntime } from "./persist/hydrate.js"
+import type { ProjectStore } from "./persist/store.js"
+import { dispatchTool, environmentForTool } from "./execution/tools.js"
 
 export interface MeshlyConfig {
   executionFabric?: ExecutionFabric
   maxConcurrency?: number
   defaultLifespanMs?: number
   maxHotTokens?: number
+  defaultLimits?: Partial<import("./types.js").WorkerLimits>
 }
 
 export interface WorkflowStep {
@@ -64,9 +68,13 @@ export class MeshlyRuntime {
   public readonly runs: RunManager
   public readonly operator: OperatorManager
   public readonly failures: FailureInjector
+  public readonly defaultLimits?: Partial<import("./types.js").WorkerLimits>
+  public readonly maxConcurrency: number
 
   constructor(config: MeshlyConfig = {}) {
     this.events = new EventStore()
+    this.defaultLimits = config.defaultLimits
+    this.maxConcurrency = config.maxConcurrency ?? 10
     const fabric = config.executionFabric || new SimulatorExecutionFabric()
 
     const onLeaseExpired = async (lease: EnvironmentLease) => {
@@ -80,7 +88,7 @@ export class MeshlyRuntime {
     }
 
     this.broker = new EnvironmentBroker(this.events, fabric, onLeaseExpired)
-    this.scheduler = new Scheduler(this.broker, this.events, config.maxConcurrency ?? 10)
+    this.scheduler = new Scheduler(this.broker, this.events, this.maxConcurrency)
     this.contexts = new ContextManager(this.events)
     this.memory = new MemoryManager(this.events, config.maxHotTokens ?? 4000)
     this.checkpoints = new CheckpointManager(this.events)
@@ -191,86 +199,124 @@ export class MeshlyRuntime {
     })
 
     const run = this.runs.create(worker)
+    worker.context.runId = run.runId
     const maxSteps = params.maxSteps ?? 5
+    const leases = new Map<string, string>()
 
-    // Background execution loop
-    Promise.resolve().then(async () => {
-      try {
-        let actionReq = await params.adapter.start(worker.context)
+    try {
+      let actionReq = await params.adapter.start(worker.context)
 
-        for (let step = 1; step <= maxSteps; step++) {
-          if (actionReq.done) break
+      for (let step = 1; step <= maxSteps; step++) {
+        if (actionReq.done || actionReq.tool === "complete") break
 
-          const execStep = run.createStep({
-            intent: actionReq.intent,
-            action: { tool: actionReq.tool, args: actionReq.args },
-          })
+        const execStep = run.createStep({
+          intent: actionReq.intent,
+          action: { tool: actionReq.tool, args: actionReq.args },
+        })
 
-          // Policy interception
-          const authResult = this.authority.authorize(worker.id, worker.authority, {
-            tool: actionReq.tool,
-            capability: params.capabilities[0],
-          })
+        const envType = environmentForTool(actionReq.tool) || (params.capabilities[0] as any)
+        const authResult = this.authority.authorize(worker.id, worker.authority, {
+          tool: actionReq.tool,
+          capability: envType,
+        })
 
-          if (!authResult.allowed) {
-            run.updateStepStatus(execStep.id, "rejected", { error: authResult.violation })
-            run.fail(authResult.violation)
-            return
-          }
-
-          run.updateStepStatus(execStep.id, "authorized")
-
-          // Verification Contract
-          const contract = params.verifyContract || {
-            intent: actionReq.intent,
-            preconditions: [],
-            postconditions: [],
-          }
-
-          const verifyRes = await this.verifyStep({
-            workerId: worker.id,
-            contract,
-            executeAction: async () => {
-              run.updateStepStatus(execStep.id, "executing")
-              worker.deductSpend(0.02)
-              return { claimedSuccess: actionReq.claimedSuccess !== false }
-            },
-            observeState: async () => {
-              const obs = { step, tool: actionReq.tool, verified: true }
-              run.updateStepStatus(execStep.id, "observed", { observation: obs })
-              return obs
-            },
-          })
-
-          if (verifyRes.state.worldStateMatched) {
-            run.updateStepStatus(execStep.id, "committed", {
-              agentClaim: verifyRes.state.agentClaim,
-              toolExecution: verifyRes.state.toolExecution,
-              worldStateMatched: true,
-              evidence: verifyRes.evidence,
-            })
-            actionReq = await params.adapter.handleObservation(worker.context, verifyRes.state.observations)
-          } else {
-            run.updateStepStatus(execStep.id, "rejected", {
-              agentClaim: verifyRes.state.agentClaim,
-              toolExecution: verifyRes.state.toolExecution,
-              worldStateMatched: false,
-              error: verifyRes.state.error,
-            })
-            run.fail(`Verification divergence at step ${step}`)
-            return
-          }
+        if (!authResult.allowed) {
+          run.updateStepStatus(execStep.id, "rejected", { error: authResult.violation })
+          run.fail(authResult.violation)
+          return run
         }
 
-        this.complete(worker.id)
-        run.complete()
-      } catch (err: any) {
-        this.fail(worker.id, err.message)
-        run.fail(err.message)
-      }
-    })
+        run.updateStepStatus(execStep.id, "authorized")
 
-    return run
+        let env
+        if (envType === "browser" || envType === "sandbox" || envType === "desktop") {
+          if (!leases.has(envType)) {
+            const lease = await this.broker.acquire({
+              workerId: worker.id,
+              type: envType,
+              capabilities: [envType],
+              authority: worker.authority,
+              budget: Math.max(0.01, worker.budget.maxSpend - worker.budget.spent),
+            })
+            leases.set(envType, lease.leaseId)
+            run.recordEnvironment(lease.environmentId)
+          }
+          const lease = this.broker.getLease(leases.get(envType)!)
+          env = lease ? this.broker.inspect(lease.environmentId) : undefined
+        }
+
+        const contract = params.verifyContract || actionReq.contract || {
+          intent: actionReq.intent,
+          preconditions: [],
+          postconditions: [],
+        }
+
+        const dispatched = await dispatchTool({
+          tool: actionReq.tool,
+          args: actionReq.args || {},
+          env,
+          runId: run.runId,
+          timeoutMs: actionReq.timeoutMs,
+        })
+
+        const verifyRes = await this.verifyStep({
+          workerId: worker.id,
+          runId: run.runId,
+          contract,
+          executeAction: async () => {
+            run.updateStepStatus(execStep.id, "executing")
+            worker.deductSpend(0.02)
+            return { claimedSuccess: dispatched.claimedSuccess, ...dispatched.observation }
+          },
+          observeState: async () => {
+            run.updateStepStatus(execStep.id, "observed", { observation: dispatched.observation })
+            return dispatched.observation
+          },
+        })
+
+        if (dispatched.outcome === "UNKNOWN") {
+          run.markUnknown("Agent action result UNKNOWN")
+          return run
+        }
+
+        if (verifyRes.state.worldStateMatched) {
+          run.updateStepStatus(execStep.id, "committed", {
+            agentClaim: verifyRes.state.agentClaim,
+            toolExecution: verifyRes.state.toolExecution,
+            worldStateMatched: true,
+            evidence: verifyRes.evidence,
+            observation: dispatched.observation,
+          })
+          worker.context.currentStep = step
+          actionReq = await params.adapter.handleObservation(worker.context, verifyRes.state.observations)
+        } else {
+          run.updateStepStatus(execStep.id, "rejected", {
+            agentClaim: verifyRes.state.agentClaim,
+            toolExecution: verifyRes.state.toolExecution,
+            worldStateMatched: false,
+            error: verifyRes.state.error,
+          })
+          run.fail(`Verification divergence at step ${step}`)
+          return run
+        }
+      }
+
+      this.complete(worker.id)
+      run.complete()
+      return run
+    } catch (err: any) {
+      this.fail(worker.id, err.message)
+      run.fail(err.message)
+      return run
+    } finally {
+      for (const leaseId of leases.values()) {
+        const lease = this.broker.getLease(leaseId)
+        if (lease) {
+          await this.broker.release(leaseId)
+          await this.broker.destroy(lease.environmentId)
+        }
+      }
+    }
   }
 
   /**
@@ -288,6 +334,8 @@ export class MeshlyRuntime {
     parentId?: string
     metadata?: Record<string, any>
     initialMemory?: Array<{ key: string; value: any; tier?: "hot" | "warm" | "cold" }>
+    kind?: import("./types.js").WorkerKind
+    limits?: Partial<import("./types.js").WorkerLimits>
   }): Promise<WorkerInstance> {
     return this.workers.spawn(params)
   }
@@ -298,6 +346,16 @@ export class MeshlyRuntime {
    */
   async executeWorker(workerId: string, options: ExecuteWorkerOptions = {}): Promise<RunInstance> {
     return executeWorker(this, workerId, options)
+  }
+
+  /**
+   * Continue a paused / recovered run from its last committed checkpoint.
+   * Does not start a new run.
+   */
+  async resumeRun(runId: string, options: ExecuteWorkerOptions = {}): Promise<RunInstance> {
+    const run = this.runs.get(runId)
+    if (!run) throw new Error(`Run '${runId}' not found`)
+    return executeWorker(this, run.workerId, { ...options, resumeRunId: runId })
   }
 
   async scheduleNext(): Promise<{ worker?: WorkerInstance; lease?: EnvironmentLease; score?: number }> {
@@ -387,6 +445,14 @@ export class MeshlyRuntime {
 
   fail(workerId: string, error?: string): void {
     this.scheduler.markFailed(workerId, error)
+  }
+
+  persist(store: ProjectStore): void {
+    persistRuntime(this, store)
+  }
+
+  async restore(store: ProjectStore) {
+    return restoreRuntime(this, store)
   }
 
   /**

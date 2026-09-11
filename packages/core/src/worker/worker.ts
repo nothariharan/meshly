@@ -7,6 +7,8 @@ import {
   Capability,
   Authority,
   Budget,
+  WorkerLimits,
+  DEFAULT_WORKER_LIMITS,
   WorkerContext,
   MemoryRef,
   EnvironmentLease,
@@ -20,11 +22,13 @@ import { AuthorityManager, ActionIntent } from "../authority/authority.js"
 export class WorkerInstance implements IWorker {
   id: string
   name?: string
+  kind?: import("../types.js").WorkerKind
   task: string
   status: WorkerStatus = "CREATED"
   priority: number
   deadline?: Date
   budget: Budget
+  limits: WorkerLimits
   capabilities: Capability[]
   authority: Authority
   context: WorkerContext
@@ -42,10 +46,12 @@ export class WorkerInstance implements IWorker {
   constructor(params: {
     id: string
     name?: string
+    kind?: import("../types.js").WorkerKind
     task: string
     priority?: number
     deadline?: Date
     budget?: number
+    limits?: Partial<WorkerLimits>
     capabilities: Capability[]
     authority: Authority
     context: WorkerContext
@@ -54,13 +60,19 @@ export class WorkerInstance implements IWorker {
   }) {
     this.id = params.id
     this.name = params.name
+    this.kind = params.kind
     this.task = params.task
     this.priority = params.priority ?? 5
     this.deadline = params.deadline
     this.budget = {
-      maxSpend: params.budget ?? params.authority.maxSpend ?? 5.0,
+      maxSpend: params.budget ?? params.authority.maxSpend ?? DEFAULT_WORKER_LIMITS.maxSpend,
       spent: 0,
       currency: "USD",
+    }
+    this.limits = {
+      ...DEFAULT_WORKER_LIMITS,
+      ...params.limits,
+      maxSpend: this.budget.maxSpend,
     }
     this.capabilities = [...params.capabilities]
     this.authority = params.authority
@@ -194,7 +206,9 @@ export class WorkerInstance implements IWorker {
   async run(options?: {
     artifactDir?: string
     destroyAfter?: boolean
-    scenario?: "default" | "reality-divergence"
+    scenario?: "default" | "reality-divergence" | "ambiguous-timeout"
+    kind?: string
+    signal?: AbortSignal
     onProgress?: (run: import("../run/run.js").RunInstance) => void
   }) {
     return this.mesh.executeWorker(this.id, options)

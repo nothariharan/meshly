@@ -258,6 +258,31 @@ export class EnvironmentBroker {
     return this.leases.get(leaseId)
   }
 
+  getFabric(): ExecutionFabric {
+    return this.fabric
+  }
+
+  adopt(env: ExecutionEnvironment, lease?: EnvironmentLease): void {
+    this.environments.set(env.id, env)
+    if (lease) this.leases.set(lease.leaseId, lease)
+  }
+
+  async reconnect(environmentId: string): Promise<ExecutionEnvironment | undefined> {
+    const env = this.environments.get(environmentId)
+    if (!env?.fabricId) return env
+    if (!this.fabric.reconnect) return env
+    const resource = await this.fabric.reconnect(env.fabricId, env.type)
+    env.handle = resource.handle
+    env.streamUrl = resource.streamUrl ?? env.streamUrl
+    env.replayUrl = resource.replayUrl ?? env.replayUrl
+    env.status = env.status === "PAUSED" ? "PAUSED" : "IDLE"
+    this.events.emit("environment.reconnected", {
+      environmentId: env.id,
+      data: { type: env.type, fabricId: env.fabricId },
+    })
+    return env
+  }
+
   register(type: EnvironmentType, options: { profile?: string } = {}): ExecutionEnvironment {
     const id = `env_${type}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
     const env: ExecutionEnvironment = {

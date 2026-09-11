@@ -7,6 +7,18 @@ import path from "node:path"
 import type { MeshlyEvent, RunStatus } from "../types.js"
 import type { RunInstance } from "../run/run.js"
 
+const PROJECT_DIRS = [
+  "workers",
+  "runs",
+  "environments",
+  "events",
+  "checkpoints",
+  "memory",
+  "policies",
+  "evidence",
+  "artifacts",
+] as const
+
 export interface MeshlyProjectConfig {
   name: string
   createdAt: string
@@ -30,11 +42,19 @@ export interface StoredMemoryRef {
 export interface StoredWorker {
   id: string
   name: string
+  kind?: string
   task: string
   capabilities: string[]
   priority: number
   budget: number
   spent?: number
+  limits?: {
+    maxSpend: number
+    maxDurationMs: number
+    maxEnvironments: number
+    maxRetries: number
+    maxToolCalls: number
+  }
   status?: string
   currentRunId?: string
   authority?: StoredAuthority
@@ -71,11 +91,14 @@ export interface StoredRun {
   runId: string
   workerId: string
   workerName?: string
+  kind?: string
   objective: string
   status: string
   mode: "live" | "simulator"
   startedAt: number
   completedAt?: number
+  toolCalls?: number
+  retries?: number
   environments: StoredEnvironment[]
   steps: any[]
   events: MeshlyEvent[]
@@ -110,10 +133,9 @@ export class ProjectStore {
   }
 
   init(name: string, execution: "solari" | "simulator" = "solari"): MeshlyProjectConfig {
-    fs.mkdirSync(path.join(this.dir, "workers"), { recursive: true })
-    fs.mkdirSync(path.join(this.dir, "runs"), { recursive: true })
-    fs.mkdirSync(path.join(this.dir, "environments"), { recursive: true })
-    fs.mkdirSync(path.join(this.dir, "artifacts"), { recursive: true })
+    for (const dir of PROJECT_DIRS) {
+      fs.mkdirSync(path.join(this.dir, dir), { recursive: true })
+    }
     const config: MeshlyProjectConfig = {
       name,
       createdAt: new Date().toISOString(),
@@ -124,7 +146,12 @@ export class ProjectStore {
   }
 
   ensure(name = path.basename(this.root), execution: "solari" | "simulator" = "simulator"): MeshlyProjectConfig {
-    if (this.exists()) return this.loadConfig()
+    if (this.exists()) {
+      for (const dir of PROJECT_DIRS) {
+        fs.mkdirSync(path.join(this.dir, dir), { recursive: true })
+      }
+      return this.loadConfig()
+    }
     return this.init(name, execution)
   }
 
@@ -241,11 +268,14 @@ export class ProjectStore {
       runId: params.run.runId,
       workerId: params.worker.id,
       workerName: params.worker.name,
+      kind: (params.run as any).kind || (params.worker as any).kind,
       objective: params.worker.task,
       status: params.run.status,
       mode: params.mode,
       startedAt: params.run.startedAt,
       completedAt: params.run.completedAt,
+      toolCalls: params.run.toolCalls,
+      retries: params.run.retries,
       environments,
       steps: params.run.steps,
       events,
@@ -258,7 +288,73 @@ export class ProjectStore {
     if (existing?.compensated) stored.compensated = existing.compensated
     if (existing?.operatorActions) stored.operatorActions = existing.operatorActions
     this.saveRun(stored)
+    this.saveEvents(params.run.runId, events)
+    if (params.run.evidence) this.saveEvidence(params.run.runId, params.run.evidence)
+    for (const cp of params.run.checkpoints || []) this.saveCheckpoint(cp)
     return stored
+  }
+
+  saveEvents(runId: string, events: MeshlyEvent[]): void {
+    fs.mkdirSync(path.join(this.dir, "events"), { recursive: true })
+    fs.writeFileSync(path.join(this.dir, "events", `${runId}.json`), JSON.stringify(events, null, 2))
+  }
+
+  loadEvents(runId?: string): MeshlyEvent[] {
+    const dir = path.join(this.dir, "events")
+    if (!fs.existsSync(dir)) return []
+    if (runId) {
+      const file = path.join(dir, `${runId}.json`)
+      if (!fs.existsSync(file)) return []
+      return JSON.parse(fs.readFileSync(file, "utf8"))
+    }
+    const all: MeshlyEvent[] = []
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+      all.push(...JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")))
+    }
+    return all.sort((a, b) => a.sequence - b.sequence)
+  }
+
+  saveCheckpoint(cp: { id: string; workerId: string; [key: string]: any }): void {
+    fs.mkdirSync(path.join(this.dir, "checkpoints"), { recursive: true })
+    fs.writeFileSync(path.join(this.dir, "checkpoints", `${safeName(cp.id)}.json`), JSON.stringify(cp, null, 2))
+  }
+
+  listCheckpoints(): any[] {
+    const dir = path.join(this.dir, "checkpoints")
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")))
+  }
+
+  saveMemory(workerId: string, snapshot: Record<string, any>): void {
+    fs.mkdirSync(path.join(this.dir, "memory"), { recursive: true })
+    fs.writeFileSync(path.join(this.dir, "memory", `${safeName(workerId)}.json`), JSON.stringify({ workerId, snapshot }, null, 2))
+  }
+
+  listMemory(): Array<{ workerId: string; snapshot: Record<string, any> }> {
+    const dir = path.join(this.dir, "memory")
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")))
+  }
+
+  savePolicy(workerId: string, authority: any): void {
+    fs.mkdirSync(path.join(this.dir, "policies"), { recursive: true })
+    fs.writeFileSync(path.join(this.dir, "policies", `${safeName(workerId)}.json`), JSON.stringify({ workerId, authority }, null, 2))
+  }
+
+  saveEvidence(runId: string, evidence: any): void {
+    fs.mkdirSync(path.join(this.dir, "evidence"), { recursive: true })
+    fs.writeFileSync(path.join(this.dir, "evidence", `${runId}.json`), JSON.stringify(evidence, null, 2))
+  }
+
+  saveKernel(snapshot: Record<string, any>): void {
+    fs.mkdirSync(this.dir, { recursive: true })
+    fs.writeFileSync(path.join(this.dir, "kernel.json"), JSON.stringify(snapshot, null, 2))
+  }
+
+  loadKernel(): any | undefined {
+    const file = path.join(this.dir, "kernel.json")
+    if (!fs.existsSync(file)) return undefined
+    return JSON.parse(fs.readFileSync(file, "utf8"))
   }
 
   private workerPath(idOrName: string): string {

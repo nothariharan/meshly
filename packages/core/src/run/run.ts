@@ -20,7 +20,10 @@ export class RunInstance implements Run {
   public readonly workerId: string
   public readonly objective: string
   public status: RunStatus = "RUNNING"
-  public readonly startedAt: number
+  public kind?: import("../types.js").WorkerKind
+  public startedAt: number
+  public toolCalls = 0
+  public retries = 0
   public completedAt?: number
   public environments: string[] = []
   public steps: ExecutionStep[] = []
@@ -33,19 +36,26 @@ export class RunInstance implements Run {
   private eventStore: EventStore
   private worker: WorkerInstance
 
-  constructor(worker: WorkerInstance, eventStore: EventStore, runId?: string) {
+  constructor(
+    worker: WorkerInstance,
+    eventStore: EventStore,
+    runId?: string,
+    opts?: { silent?: boolean; startedAt?: number },
+  ) {
     this.runId = runId || `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
     this.workerId = worker.id
     this.objective = worker.task
-    this.startedAt = Date.now()
+    this.startedAt = opts?.startedAt ?? Date.now()
     this.worker = worker
     this.eventStore = eventStore
 
-    this.eventStore.emit("run.started", {
-      runId: this.runId,
-      workerId: this.workerId,
-      data: { objective: this.objective, priority: worker.priority },
-    })
+    if (!opts?.silent) {
+      this.eventStore.emit("run.started", {
+        runId: this.runId,
+        workerId: this.workerId,
+        data: { objective: this.objective, priority: worker.priority },
+      })
+    }
   }
 
   recordEnvironment(envId: string): void {
@@ -95,14 +105,87 @@ export class RunInstance implements Run {
     })
   }
 
-  async resume(): Promise<void> {
+  statusSnapshot(): RunStatus {
+    return this.status
+  }
+
+  meters() {
+    const limits = this.worker.limits
+    const elapsed = (this.completedAt || Date.now()) - this.startedAt
+    return {
+      spend: this.worker.budget.spent,
+      maxSpend: this.worker.budget.maxSpend,
+      durationMs: elapsed,
+      maxDurationMs: limits?.maxDurationMs ?? 30 * 60_000,
+      environments: this.environments.length,
+      maxEnvironments: limits?.maxEnvironments ?? 3,
+      toolCalls: this.toolCalls,
+      maxToolCalls: limits?.maxToolCalls ?? 40,
+      retries: this.retries,
+      maxRetries: limits?.maxRetries ?? 1,
+    }
+  }
+
+  eventLog() {
+    return this.eventStore.getRunTimeline(this.runId)
+  }
+
+  async verify(): Promise<{ matched: boolean; error?: string }> {
+    const step = [...this.steps].reverse().find((s) => s.contract) || this.steps[this.steps.length - 1]
+    if (!step?.contract) return { matched: false, error: "No verification contract on this run" }
+    const observation = step.observation || {}
+    for (const cond of step.contract.postconditions) {
+      const actual = observation[cond.query]
+      const ok =
+        cond.type === "text_contains"
+          ? String(actual || "").toLowerCase().includes(String(cond.expected).toLowerCase())
+          : actual === cond.expected
+      if (!ok) {
+        return {
+          matched: false,
+          error: `Postcondition failed on '${cond.query}': expected '${cond.expected}', observed '${actual}'`,
+        }
+      }
+    }
+    return { matched: true }
+  }
+
+  checkpoint() {
+    const cp = this.worker.checkpointState(this.steps.length, this.steps[this.steps.length - 1]?.observation)
+    this.recordCheckpoint(cp)
+    return cp
+  }
+
+  export() {
+    return this.exportBundle()
+  }
+
+  async takeover() {
+    return this.worker["mesh"].operator.takeover(this.workerId, this.environments[0])
+  }
+
+  markUnknown(reason?: string): void {
+    this.status = "UNKNOWN"
+    this.error = reason
+    this.eventStore.emit("run.unknown", {
+      runId: this.runId,
+      workerId: this.workerId,
+      data: { reason, retry: false },
+    })
+  }
+
+  async resume(options?: import("../execution/loop.js").ExecuteWorkerOptions): Promise<RunInstance> {
+    if (this.status === "COMPLETED" || this.status === "COMMITTED" || this.status === "VERIFIED") {
+      return this
+    }
     this.status = "RUNNING"
     await this.worker.resume()
     this.eventStore.emit("run.resumed", {
       runId: this.runId,
       workerId: this.workerId,
-      data: { stepIndex: this.steps.length },
+      data: { stepIndex: this.steps.filter((s) => s.status === "committed").length },
     })
+    return this.worker["mesh"].resumeRun(this.runId, options)
   }
 
   async cancel(reason?: string): Promise<void> {
@@ -225,6 +308,10 @@ export class RunManager {
     const run = new RunInstance(worker, this.eventStore, runId)
     this.runs.set(run.runId, run)
     return run
+  }
+
+  restore(run: RunInstance): void {
+    this.runs.set(run.runId, run)
   }
 
   get(runId: string): RunInstance | undefined {

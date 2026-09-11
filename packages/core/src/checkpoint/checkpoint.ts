@@ -79,4 +79,21 @@ export class CheckpointManager {
     const list = this.workerCheckpoints.get(workerId) ?? []
     return list.map((id) => this.checkpoints.get(id)!).filter(Boolean)
   }
+
+  restore(cp: CheckpointRef): void {
+    this.checkpoints.set(cp.id, cp)
+    const list = this.workerCheckpoints.get(cp.workerId) ?? []
+    if (!list.includes(cp.id)) list.push(cp.id)
+    this.workerCheckpoints.set(cp.workerId, list)
+    if (this.events) {
+      this.events.emit("checkpoint.restored", {
+        workerId: cp.workerId,
+        data: { checkpointId: cp.id, step: cp.step },
+      })
+    }
+  }
+
+  exportAll(): CheckpointRef[] {
+    return Array.from(this.checkpoints.values())
+  }
 }

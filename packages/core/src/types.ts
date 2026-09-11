@@ -26,14 +26,23 @@ export type WorkerStatus =
   | "FAILED"
   | "CANCELLED"
 
+export type WorkerKind = "probe" | "reconciliation" | "research" | "coding" | "operations"
+
+export type ActionOutcome = "SUCCESS" | "FAILURE" | "UNKNOWN"
+
 export type RunStatus =
   | "PENDING"
   | "RUNNING"
   | "PAUSED"
+  | "WAITING"
+  | "UNKNOWN"
+  | "VERIFYING"
+  | "VERIFIED"
+  | "BLOCKED"
+  | "COMMITTED"
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED"
-  | "BLOCKED"
   | "VERIFICATION_FAILED"
 
 export type EnvironmentType = "browser" | "sandbox" | "desktop"
@@ -54,6 +63,23 @@ export interface Budget {
   maxSpend: number
   spent: number
   currency: string
+}
+
+/** Hard operational limits. Strangers should not be able to casually burn Solari credits. */
+export interface WorkerLimits {
+  maxSpend: number
+  maxDurationMs: number
+  maxEnvironments: number
+  maxRetries: number
+  maxToolCalls: number
+}
+
+export const DEFAULT_WORKER_LIMITS: WorkerLimits = {
+  maxSpend: 2,
+  maxDurationMs: 30 * 60_000,
+  maxEnvironments: 3,
+  maxRetries: 1,
+  maxToolCalls: 40,
 }
 
 export interface Authority {
@@ -164,11 +190,13 @@ export interface WorkerContext {
 export interface Worker {
   id: string
   name?: string
+  kind?: WorkerKind
   task: string
   status: WorkerStatus
   priority: number
   deadline?: Date
   budget: Budget
+  limits?: WorkerLimits
   capabilities: Capability[]
   authority: Authority
   context: WorkerContext
@@ -187,6 +215,7 @@ export type ExecutionStepStatus =
   | "authorized"
   | "executing"
   | "observed"
+  | "unknown"
   | "verified"
   | "rejected"
   | "committed"
@@ -204,8 +233,9 @@ export interface ExecutionStep {
   }
   status: ExecutionStepStatus
   observation?: Record<string, any>
-  agentClaim?: "SUCCESS" | "FAILURE" | "PENDING"
-  toolExecution?: "SUCCESS" | "FAILURE" | "PENDING"
+  agentClaim?: "SUCCESS" | "FAILURE" | "PENDING" | "UNKNOWN"
+  toolExecution?: "SUCCESS" | "FAILURE" | "PENDING" | "UNKNOWN"
+  actionOutcome?: ActionOutcome
   worldStateMatched?: boolean
   evidence?: EvidenceBundle
   error?: string
@@ -224,7 +254,10 @@ export interface Run {
   workerId: string
   objective: string
   status: RunStatus
+  kind?: WorkerKind
   startedAt: number
+  toolCalls?: number
+  retries?: number
   completedAt?: number
   environments: string[]
   steps: ExecutionStep[]
@@ -253,10 +286,10 @@ export interface VerificationContract {
 }
 
 export interface VerificationState {
-  agentClaim: "SUCCESS" | "FAILURE" | "PENDING"
-  toolExecution: "SUCCESS" | "FAILURE" | "PENDING"
+  agentClaim: "SUCCESS" | "FAILURE" | "PENDING" | "UNKNOWN"
+  toolExecution: "SUCCESS" | "FAILURE" | "PENDING" | "UNKNOWN"
   worldStateMatched: boolean
-  workflowResult: "SUCCESS" | "FAILURE" | "PENDING"
+  workflowResult: "SUCCESS" | "FAILURE" | "PENDING" | "UNKNOWN"
   observations: Record<string, any>
   error?: string
   timestamp: number
@@ -302,6 +335,14 @@ export type EventType =
   | "run.completed"
   | "run.failed"
   | "run.cancelled"
+  | "run.unknown"
+  | "run.verifying"
+  | "action.timeout"
+  | "action.unknown"
+  | "verification.independent"
+  | "environment.reconnected"
+  | "runtime.restored"
+  | "limit.exceeded"
   | "environment.acquired"
   | "environment.reused"
   | "environment.paused"
@@ -366,6 +407,9 @@ export interface AgentActionRequest {
   args: any
   done?: boolean
   claimedSuccess?: boolean
+  environment?: EnvironmentType
+  timeoutMs?: number
+  contract?: VerificationContract
 }
 
 export interface AgentAdapter {
@@ -411,4 +455,6 @@ export interface ExecutionFabric {
   pauseResource(resource: FabricResource): Promise<void>
   resumeResource(resource: FabricResource): Promise<void>
   destroyResource(resource: FabricResource): Promise<void>
+  /** Re-attach to a surviving Solari session after Meshly restarts. */
+  reconnect?(id: string, type: EnvironmentType): Promise<FabricResource>
 }

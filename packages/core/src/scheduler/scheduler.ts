@@ -53,6 +53,12 @@ export class Scheduler {
     return this.activeWorkers.get(workerId)
   }
 
+  activate(worker: Worker): void {
+    this.removeFromQueue(worker.id)
+    worker.status = "RUNNING"
+    this.activeWorkers.set(worker.id, worker)
+  }
+
   calculateScore(worker: Worker): ScheduleCandidate {
     let score = worker.priority * 20
     const reasons: string[] = [`✓ Base priority: ${worker.priority} (weight +${worker.priority * 20})`]
@@ -218,6 +224,10 @@ export class Scheduler {
 
   getActiveCount(): number {
     return this.activeWorkers.size
+  }
+
+  getMaxConcurrency(): number {
+    return this.maxConcurrency
   }
 
   getQueue(): Worker[] {

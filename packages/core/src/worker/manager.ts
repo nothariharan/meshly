@@ -18,6 +18,7 @@ export class WorkerManager {
     capabilities: Capability[]
     name?: string
     id?: string
+    kind?: import("../types.js").WorkerKind
     priority?: number
     deadline?: Date
     budget?: number
@@ -25,6 +26,7 @@ export class WorkerManager {
     parentId?: string
     metadata?: Record<string, any>
     initialMemory?: Array<{ key: string; value: any; tier?: "hot" | "warm" | "cold" }>
+    limits?: Partial<import("../types.js").WorkerLimits>
   }): Promise<WorkerInstance> {
     const workerId = params.id || `wrk_${Math.random().toString(36).slice(2, 9)}`
 
@@ -47,10 +49,12 @@ export class WorkerManager {
     const worker = new WorkerInstance({
       id: workerId,
       name: params.name,
+      kind: params.kind,
       task: params.task,
       priority: params.priority ?? 5,
       deadline: params.deadline,
       budget: params.budget ?? auth.maxSpend,
+      limits: params.limits || this.mesh.defaultLimits,
       capabilities: params.capabilities,
       authority: auth,
       context: ctx,
@@ -99,5 +103,9 @@ export class WorkerManager {
 
   get size(): number {
     return this.workers.size
+  }
+
+  restore(worker: WorkerInstance): void {
+    this.workers.set(worker.id, worker)
   }
 }

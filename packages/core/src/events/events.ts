@@ -54,6 +54,24 @@ export class EventStore {
     return event
   }
 
+  load(events: MeshlyEvent[]): void {
+    this.events = events.map((e) => {
+      const copy = { ...e, data: e.data ? { ...e.data } : {} }
+      Object.freeze(copy)
+      Object.freeze(copy.data)
+      return copy
+    })
+    this.sequenceCounter = this.events.reduce((max, e) => Math.max(max, e.sequence || 0), 0)
+    this.lastEventIdByWorker.clear()
+    for (const event of this.events) {
+      if (event.workerId) this.lastEventIdByWorker.set(event.workerId, event.id)
+    }
+  }
+
+  exportAll(): MeshlyEvent[] {
+    return [...this.events]
+  }
+
   subscribe(listener: (event: MeshlyEvent) => void): () => void {
     this.listeners.push(listener)
     return () => {

@@ -162,6 +162,21 @@ export class MemoryManager {
     return snap
   }
 
+  exportAll(): Array<{ workerId: string; entry: MemoryRef }> {
+    const out: Array<{ workerId: string; entry: MemoryRef }> = []
+    for (const [k, v] of this.store.entries()) {
+      const workerId = k.split(":")[0]
+      out.push({ workerId, entry: v })
+    }
+    return out
+  }
+
+  importAll(items: Array<{ workerId: string; entry: MemoryRef }>): void {
+    for (const item of items) {
+      this.store.set(`${item.workerId}:${item.entry.key}`, item.entry)
+    }
+  }
+
   private enforceHotTierLimits(workerId: string): void {
     const prefix = `${workerId}:`
     const hotItems: MemoryRef[] = []
