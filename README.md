@@ -2,96 +2,108 @@
 
 The operating system for autonomous workers.
 
-**wsp** manages where an agent works. **Meshly** manages how autonomous work executes safely.
+Agents reason.
+Meshly governs execution.
+Solari provides the environment.
 
-Agents reason. Solari executes. Meshly makes sure what the agent intended is actually what happened.
+## Install
 
-Locked definition: [docs/product.md](docs/product.md)
-
-## Product loop
+```bash
+npm install -g meshly
+meshly init
+```
 
 From this repo (packages are not on npm yet):
 
 ```bash
 npm install
-npm run build
-cp .env.example .env          # add SOLARI_API_KEY for live Solari
-npm run meshly -- init
-npm run meshly -- worker create --name invoice-reconciler --task "Reconcile today's payments with the ERP" --capabilities browser,sandbox,desktop
-npm run meshly -- run invoice-reconciler
-npm run meshly -- dev         # http://localhost:3400
+npm run meshly -- init --yes --provider simulator
+npm run meshly -- run invoice-reconciler --simulator
+npm run meshly -- dev
 ```
 
-`meshly init` writes `.meshly/`. `meshly dev` is the operator console. It reads that directory. There is no seeded demo data.
+## Quickstart
 
-Without credits:
+```text
+Connect Solari
+     ↓
+Create worker
+     ↓
+Run worker
+     ↓
+Open console
+     ↓
+See real execution
+```
 
 ```bash
-npm run meshly -- init --yes --provider simulator
-npm run meshly -- live --simulator
-npm run meshly -- fail --simulator   # claim succeeds, world mismatches, commit BLOCKED
+meshly init
+meshly run invoice-reconciler
+meshly dev                 # http://localhost:3400
 ```
-
-With `SOLARI_API_KEY`, omit `--simulator`. Live Solari is the default. Failures surface. Meshly will not silently fall back to the simulator.
 
 ## Console
 
-Workers · Runs · Environments · Policies
+Click Worker → Run → Environment → Evidence.
 
-The run page is the product:
-
-```
-INTENT → ACTION → OBSERVATION → VERIFICATION → COMMIT
+```text
+AUTHORIZE → EXECUTE → OBSERVE → VERIFY → COMMIT
 ```
 
-An agent claim is not equivalent to reality. If verification fails, commit stays **BLOCKED**. Re-verify, take over, and SAGA compensate are real operations on persisted run state.
+If the world state is unknown, Meshly does not retry.
 
-Keyboard: `1–4` switches sections, `c` creates a worker.
+```text
+✓ Intent
+✓ Authorized
+✓ Dispatched
+⚠ UNKNOWN
+Side effect may have occurred.
+Retry blocked pending verification.
+```
 
 ## SDK
 
 ```ts
-import { Meshly, Solari } from "@meshly/sdk"
+import { Meshly } from "@meshly/sdk"
 
 const mesh = new Meshly({
-  execution: new Solari({ apiKey: process.env.SOLARI_API_KEY }),
+  solariApiKey: process.env.SOLARI_API_KEY,
 })
 
-const worker = await mesh.spawn({
+const worker = await mesh.workers.spawn({
   task: "Reconcile today's payments with the ERP",
+  kind: "reconciliation",
   capabilities: ["browser", "sandbox", "desktop"],
 })
 
 const run = await worker.run()
+await run.pause()
+await run.resume()
+await run.verify()
+await run.cancel()
 ```
 
 You should not have to manage Solari sessions yourself.
 
 ## Packages
 
+The user installs Meshly. Internals:
+
 | Package | Role |
 |---|---|
-| `@meshly/core` | Kernel: workers, runs, authority, verify, recover |
-| `@meshly/solari` | ExecutionFabric → Solari browsers, sandboxes, desktops |
-| `@meshly/sdk` | `new Meshly`, `workers.spawn`, `worker.run()` |
-| `@meshly/cli` | `meshly` human CLI |
-| `@meshly/console` | Operator app (`meshly dev`) |
-| `meshly` | Unscoped bin so `npx meshly` works after publish |
+| `meshly` | CLI / main entry |
+| `@meshly/sdk` | Developer SDK |
+| `@meshly/core` | Runtime internals |
+| `@meshly/solari` | Solari execution adapter |
+| `@meshly/console` | Operator console (`meshly dev`) |
 
-Not published. Do not publish `.env`, `.meshly/`, cookbook, or this private workspace root.
+Not published yet. Architecture notes live in [`docs/`](docs/). Frozen API: [`docs/api.md`](docs/api.md).
 
 ## Honesty
 
-- `meshly simulate` / `meshly benchmark` are **scheduler simulations**, not live Solari capacity tests.
+- Live Solari is the default when `SOLARI_API_KEY` is set. Failures surface. No silent simulator fallback.
+- `meshly simulate` / `meshly benchmark` are scheduler simulations, not live Solari capacity tests.
 - SHA-256 on a run is tamper-evident execution evidence. It does not prove the observation is true.
-- Kernel tests (`npm test`) prove invariants. A live Solari run proves the product exists.
-
-## Tests
-
-```bash
-npm test
-npm run dry-test    # pack tarballs → empty dir → SDK + CLI
-```
 
 ## License
 

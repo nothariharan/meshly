@@ -39,6 +39,13 @@ export type WorkerRow = {
     maxSpend?: number
   }
   memory?: Array<{ key: string; tier: string; value?: unknown }>
+  limits?: {
+    maxSpend: number
+    maxDurationMs: number
+    maxEnvironments: number
+    maxRetries: number
+    maxToolCalls: number
+  }
   updatedAt: string
   createdAt: string
   runCount: number
@@ -62,6 +69,8 @@ export type RunRecord = {
   takeover?: { sessionId: string; streamUrl?: string; active: boolean; startedAt: number }
   compensated?: boolean
   operatorActions?: Array<{ type: string; at: string; result: string }>
+  toolCalls?: number
+  retries?: number
 }
 
 export type EnvRecord = {
@@ -111,6 +120,7 @@ export async function createWorker(body: {
   task: string
   capabilities: string[]
   budget?: number
+  kind?: string
 }) {
   return parse(
     await fetch("/api/workers", {
@@ -141,6 +151,14 @@ export async function reverify(runId: string) {
 
 export async function takeover(runId: string) {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/takeover`, { method: "POST" }))
+}
+
+export async function cancelRun(runId: string) {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }))
+}
+
+export async function resumeRun(runId: string) {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/resume`, { method: "POST" }))
 }
 
 export async function compensate(runId: string) {

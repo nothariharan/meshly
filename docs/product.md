@@ -74,15 +74,26 @@ Every day produces something externally demonstrable.
 ## Shipped in this repo
 
 - Live Solari adapter (no silent simulator fallback)
-- `meshly init` / `worker create` / `run` / `live` / `fail` / `dev`
+- `meshly init` / `worker create` / `run` / `live` / `fail` / `dev` / `restart` / `mcp`
 - Workers-first console on `.meshly/` (no seeded fake runs)
-- One live Solari probe: browser + sandbox + desktop
-- Deterministic verification failure (`meshly fail`) that actually mismatches world state
+- Agent runtime: ActionRequest → Policy → ExecutionFabric → Solari (agents never get a Solari client)
+- Reconciliation worker: Browser payment → Sandbox ledger → Desktop ERP → independent verify
+- Research, coding, and operations workers on the same kernel
+- Ambiguous timeout: result = UNKNOWN, no retry until independent verification
+- Persistence under `.meshly/` (workers, runs, environments, events, checkpoints, memory, policies, evidence)
+- `meshly restart` reconnects surviving Solari environments
 
-## Next (do not skip ahead to a website)
+## Next
 
-1. One real Browser → Sandbox → Desktop workflow with observable world state
-2. One real ambiguous failure (timeout / unknown state → no blind retry)
-3. Two more workers without kernel changes
-4. Then npm publish, then docs/landing/demo recording
+The runtime is usable. New work must make Meshly easier to use, make a worker safer to run, or make the execution lifecycle more observable.
+
+Frozen API: [docs/api.md](api.md)
+
+1. Keep the core API frozen (Workers, Runs, Environments, Policies, Events)
+2. Canonical reconciliation workflow in the console (Worker → Run → Environment → Evidence)
+3. Real Solari validation of resume-after-kill
+4. External-user install test (`npm install -g meshly`)
+5. Then website / challenge demo
+
+Do not invent new kernel concepts.
 

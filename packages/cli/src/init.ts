@@ -56,42 +56,72 @@ export async function runInit(
   if (skipProbe) {
     console.log("\n[2] Test infrastructure")
     console.log("    skipped (--skip-probe)")
-    console.log("\nReady. Next: meshly worker create   or   meshly dev\n")
-    return
-  }
+  } else {
+    console.log("\n[2] Test infrastructure")
+    const mesh = new Meshly(
+      execution === "simulator"
+        ? { preferSimulator: true }
+        : { solariApiKey: process.env.SOLARI_API_KEY, fallbackToSimulator: false },
+    )
 
-  console.log("\n[2] Test infrastructure")
-  const mesh = new Meshly(
-    execution === "simulator"
-      ? { preferSimulator: true }
-      : { solariApiKey: process.env.SOLARI_API_KEY, fallbackToSimulator: false },
-  )
-
-  const caps = ["browser", "sandbox", "desktop"] as const
-  for (const cap of caps) {
-    process.stdout.write(`    ${cap[0].toUpperCase()}${cap.slice(1)} `)
-    try {
-      const worker = await mesh.spawn({
-        name: `probe-${cap}`,
-        task: `Probe ${cap} execution`,
-        capabilities: [cap],
-        budget: 1,
-      })
-      const run = await worker.run({ destroyAfter: true })
-      if (run.status === "COMPLETED") {
-        console.log("✓")
-      } else {
-        console.log(`✗  ${run.error || run.status}`)
+    const caps = ["browser", "sandbox", "desktop"] as const
+    for (const cap of caps) {
+      process.stdout.write(`    ${cap[0].toUpperCase()}${cap.slice(1)} `)
+      try {
+        const worker = await mesh.spawn({
+          name: `probe-${cap}`,
+          task: `Probe ${cap} execution`,
+          capabilities: [cap],
+          budget: 1,
+        })
+        const run = await worker.run({ destroyAfter: true })
+        if (run.status === "COMPLETED") {
+          console.log("✓")
+        } else {
+          console.log(`✗  ${run.error || run.status}`)
+          if (execution === "solari") process.exitCode = 1
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.log(`✗  ${message}`)
         if (execution === "solari") process.exitCode = 1
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.log(`✗  ${message}`)
-      if (execution === "solari") process.exitCode = 1
     }
   }
 
-  console.log("\n[3] Start operator console")
+  console.log("\n[3] Create worker")
+  seedCanonicalWorker(store)
+
+  console.log("\n[4] Open console")
+  console.log("    meshly run invoice-reconciler")
   console.log("    meshly dev → http://localhost:3400")
   console.log("\nReady.\n")
+}
+
+function seedCanonicalWorker(store: ProjectStore): void {
+  if (!store.getWorker("invoice-reconciler")) {
+    store.saveWorker({
+      id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
+      name: "invoice-reconciler",
+      kind: "reconciliation",
+      task: "Reconcile today's payment records with the ERP",
+      capabilities: ["browser", "sandbox", "desktop"],
+      priority: 8,
+      budget: 2,
+      spent: 0,
+      limits: {
+        maxSpend: 2,
+        maxDurationMs: 30 * 60_000,
+        maxEnvironments: 3,
+        maxRetries: 1,
+        maxToolCalls: 40,
+      },
+      status: "CREATED",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    console.log("    invoice-reconciler ✓")
+  } else {
+    console.log("    invoice-reconciler (already exists)")
+  }
 }

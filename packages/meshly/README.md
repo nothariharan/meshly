@@ -1,5 +1,10 @@
 # meshly
 
-Unscoped CLI entry so `npx meshly` works.
+```bash
+npm install -g meshly
+meshly init
+```
 
-The runtime is `@meshly/core`. The SDK is `@meshly/sdk`. This package only launches the CLI.
+The operating system for autonomous workers.
+
+Agents reason. Meshly governs execution. Solari provides the environment.

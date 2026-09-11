@@ -5,10 +5,12 @@ import {
   createWorker,
   fetchSnapshot,
   initProject,
+  resumeRun,
   reverify,
   runFailure,
   runWorker,
   takeover,
+  cancelRun,
   type EnvRecord,
   type RunRecord,
   type Snapshot,
@@ -53,11 +55,48 @@ function clock(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
 }
 
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}m ${String(s).padStart(2, "0")}s`
+}
+
+function LimitsMeters({
+  spend,
+  maxSpend,
+  durationMs,
+  maxDurationMs,
+  environments,
+  maxEnvironments,
+}: {
+  spend: number
+  maxSpend: number
+  durationMs: number
+  maxDurationMs: number
+  environments: number
+  maxEnvironments: number
+}) {
+  return (
+    <div className="meters">
+      <span>
+        ${spend.toFixed(2)} / ${maxSpend.toFixed(2)}
+      </span>
+      <span>
+        {formatDuration(durationMs)} / {Math.round(maxDurationMs / 60_000)}m
+      </span>
+      <span>
+        {environments} / {maxEnvironments} environments
+      </span>
+    </div>
+  )
+}
+
 function pillClass(status: string): string {
   const s = status.toUpperCase()
   if (s === "VERIFIED" || s === "COMPLETED" || s === "COMMITTED") return "ok"
   if (s === "RUNNING" || s === "BUSY" || s === "ACTIVE" || s === "READY") return "run"
-  if (s === "BLOCKED" || s === "PAUSED" || s === "WAITING" || s === "VERIFICATION_FAILED") return "warn"
+  if (s === "BLOCKED" || s === "PAUSED" || s === "WAITING" || s === "VERIFICATION_FAILED" || s === "UNKNOWN" || s === "VERIFYING") return "warn"
   if (s === "FAILED" || s === "CANCELLED" || s === "TERMINATED" || s === "REJECTED") return "bad"
   return ""
 }
@@ -205,6 +244,8 @@ export function App() {
           busy={busy}
           onReverify={() => act("reverify", () => reverify(route.id))}
           onTakeover={() => act("takeover", () => takeover(route.id))}
+          onCancel={() => act("cancel", () => cancelRun(route.id))}
+          onResume={() => act("resume", () => resumeRun(route.id))}
           onCompensate={() => act("compensate", () => compensate(route.id))}
         />
       )}
@@ -419,6 +460,17 @@ function WorkerDetail({
         <dd className="mono">
           ${(worker.spent || 0).toFixed(2)} / ${Number(worker.budget).toFixed(2)}
         </dd>
+        <dt>Limits</dt>
+        <dd>
+          <LimitsMeters
+            spend={worker.spent || 0}
+            maxSpend={worker.limits?.maxSpend || worker.budget}
+            durationMs={runs[0] ? (runs[0].completedAt || Date.now()) - runs[0].startedAt : 0}
+            maxDurationMs={worker.limits?.maxDurationMs || 30 * 60_000}
+            environments={runs[0]?.environments.length || 0}
+            maxEnvironments={worker.limits?.maxEnvironments || 3}
+          />
+        </dd>
         <dt>Capabilities</dt>
         <dd>
           <div className="chips">
@@ -539,6 +591,8 @@ function RunPage({
   busy,
   onReverify,
   onTakeover,
+  onCancel,
+  onResume,
   onCompensate,
 }: {
   state: Snapshot
@@ -546,6 +600,8 @@ function RunPage({
   busy: string | null
   onReverify: () => void
   onTakeover: () => void
+  onCancel: () => void
+  onResume: () => void
   onCompensate: () => void
 }) {
   const run = state.runs.find((r) => r.runId === id || r.runId.startsWith(id))
@@ -559,11 +615,33 @@ function RunPage({
     )
   }
   const step = run.steps[run.steps.length - 1] || {}
+  const worker = state.workers.find((w) => w.id === run.workerId || w.name === run.workerName)
+  const browserStep = run.steps.find((s: any) => s.observation?.type === "browser" || s.observation?.payment_status) || {}
+  const desktopStep = [...run.steps].reverse().find((s: any) => s.observation?.type === "desktop") || step
+  const unknown = run.status === "UNKNOWN" || run.status === "VERIFYING" || step.actionOutcome === "UNKNOWN"
   const diverged =
-    run.status === "BLOCKED" ||
-    run.status === "VERIFICATION_FAILED" ||
-    run.steps.some((s: any) => s.worldStateMatched === false)
-  const stages = stageModel(run)
+    !unknown &&
+    (run.status === "BLOCKED" ||
+      run.status === "VERIFICATION_FAILED" ||
+      run.steps.some((s: any) => s.worldStateMatched === false && s.actionOutcome !== "UNKNOWN"))
+  const stages = unknown ? unknownStageModel(run) : stageModel(run)
+
+  const agentClaimText =
+    browserStep.observation?.payment_status === "PAID"
+      ? "Invoice marked paid"
+      : step.agentClaim || "PENDING"
+  const solariText = browserStep.observation?.httpStatus
+    ? `HTTP ${browserStep.observation.httpStatus}`
+    : desktopStep.observation?.erp_status
+      ? `ERP ${desktopStep.observation.erp_status}`
+      : step.toolExecution || "PENDING"
+  const verifyText = desktopStep.observation?.erp_status
+    ? `ERP = ${desktopStep.observation.erp_status}`
+    : step.worldStateMatched === false
+      ? "MISMATCH"
+      : step.worldStateMatched
+        ? "MATCHED"
+        : "PENDING"
 
   return (
     <main className="page">
@@ -576,6 +654,34 @@ function RunPage({
         </div>
         <span className={`pill ${pillClass(run.status)}`}>{run.status}</span>
       </div>
+
+      <p className="crumb">
+        <a href={`#/workers/${run.workerId}`}>Worker</a>
+        <span>→</span>
+        <a href={`#/runs/${run.runId}`}>Run</a>
+        <span>→</span>
+        <a href="#/environments">Environment</a>
+        <span>→</span>
+        <button className="linkish" onClick={() => setEvidenceOpen(true)}>
+          Evidence
+        </button>
+      </p>
+
+      <LimitsMeters
+        spend={worker?.spent || 0}
+        maxSpend={worker?.limits?.maxSpend || worker?.budget || 2}
+        durationMs={(run.completedAt || Date.now()) - run.startedAt}
+        maxDurationMs={worker?.limits?.maxDurationMs || 30 * 60_000}
+        environments={run.environments.length}
+        maxEnvironments={worker?.limits?.maxEnvironments || 3}
+      />
+
+      {unknown && (
+        <div className="banner warn">
+          <h2>UNKNOWN</h2>
+          <p>Side effect may have occurred. Retry blocked pending verification.</p>
+        </div>
+      )}
 
       {diverged && (
         <div className="banner">
@@ -598,26 +704,44 @@ function RunPage({
         ))}
       </div>
 
+      <ol className="pipeline">
+        {run.steps.map((s: any, i: number) => {
+          const type = s.observation?.type || s.action?.tool?.split("_")[0] || `step ${i + 1}`
+          const env = run.environments.find((e) => e.type === type)
+          return (
+            <li key={s.id || i}>
+              <button
+                className={`pipe ${s.status === "committed" ? "ok" : s.status === "unknown" ? "warn" : s.status === "rejected" ? "bad" : ""}`}
+                onClick={() => {
+                  if (env) go(`/environments`)
+                  else setEvidenceOpen(true)
+                }}
+              >
+                <span className="n">{String(type).toUpperCase()}</span>
+                <span className="t">{String(s.status || "planned").toUpperCase()}</span>
+              </button>
+              {i < run.steps.length - 1 && <span className="arrow">→</span>}
+            </li>
+          )
+        })}
+      </ol>
+
       <div className="claim-grid">
-        <div className={`claim ${step.agentClaim === "SUCCESS" ? "ok" : step.agentClaim === "FAILURE" ? "bad" : ""}`}>
+        <div className={`claim ${step.agentClaim === "SUCCESS" ? "ok" : step.agentClaim === "FAILURE" || step.agentClaim === "UNKNOWN" ? "bad" : ""}`}>
           <div className="n">Agent claim</div>
-          <div className="t">{step.agentClaim || "PENDING"}</div>
+          <div className="t">{agentClaimText}</div>
         </div>
-        <div className={`claim ${step.toolExecution === "SUCCESS" ? "ok" : step.toolExecution === "FAILURE" ? "bad" : ""}`}>
-          <div className="n">Tool execution</div>
-          <div className="t">
-            {step.toolExecution === "SUCCESS" && step.observation?.httpStatus
-              ? `HTTP ${step.observation.httpStatus} OK`
-              : step.toolExecution || "PENDING"}
-          </div>
+        <div className={`claim ${step.toolExecution === "SUCCESS" ? "ok" : step.toolExecution === "FAILURE" || step.toolExecution === "UNKNOWN" ? "bad" : ""}`}>
+          <div className="n">Solari observation</div>
+          <div className="t">{solariText}</div>
         </div>
         <div className={`claim ${step.worldStateMatched === false ? "bad" : step.worldStateMatched ? "ok" : ""}`}>
-          <div className="n">World state</div>
-          <div className="t">{step.worldStateMatched === false ? "MISMATCH" : step.worldStateMatched ? "MATCHED" : "PENDING"}</div>
+          <div className="n">Independent verification</div>
+          <div className="t">{verifyText}</div>
         </div>
-        <div className={`claim ${diverged ? "bad" : run.status === "COMPLETED" ? "ok" : ""}`}>
-          <div className="n">Commit</div>
-          <div className="t">{diverged ? "BLOCKED" : run.status === "COMPLETED" ? "COMMITTED" : run.status}</div>
+        <div className={`claim ${diverged || run.status === "UNKNOWN" ? "bad" : run.status === "COMPLETED" || run.status === "VERIFIED" ? "ok" : ""}`}>
+          <div className="n">Decision</div>
+          <div className="t">{diverged ? "COMMIT BLOCKED" : run.status === "UNKNOWN" ? "UNKNOWN" : run.status === "COMPLETED" || run.status === "VERIFIED" ? "COMMITTED" : run.status}</div>
         </div>
       </div>
 
@@ -627,22 +751,41 @@ function RunPage({
         </p>
       )}
 
-      {diverged && (
-        <div className="actions">
+      <div className="actions">
+          {run.environments.find((e) => e.type === "browser" && (e.replayUrl || e.streamUrl)) && (
+            <a className="btn" href={run.environments.find((e) => e.type === "browser")?.replayUrl || "#"} target="_blank" rel="noreferrer">
+              Open browser
+            </a>
+          )}
+          {run.environments.find((e) => e.type === "desktop" && e.streamUrl) && (
+            <a className="btn" href={run.environments.find((e) => e.type === "desktop")?.streamUrl || "#"} target="_blank" rel="noreferrer">
+              Open desktop
+            </a>
+          )}
+          <button className="btn" onClick={() => window.location.hash = `#/runs/${run.runId}`}>
+            Replay
+          </button>
           <button className="btn" disabled={busy === "reverify"} onClick={onReverify}>
-            Re-verify
+            {unknown ? "Verify" : "Retry verification"}
           </button>
           <button className="btn" disabled={busy === "takeover"} onClick={onTakeover}>
             Take over
           </button>
+          {unknown || run.status === "PAUSED" ? (
+            <button className="btn" disabled={busy === "resume"} onClick={onResume}>
+              Resume
+            </button>
+          ) : null}
+          <button className="btn" disabled={busy === "cancel"} onClick={onCancel}>
+            Cancel
+          </button>
           <button className="btn" disabled={busy === "compensate"} onClick={onCompensate}>
-            SAGA compensate
+            Compensate
           </button>
           <button className="btn" onClick={() => setEvidenceOpen(true)}>
             Inspect evidence
           </button>
         </div>
-      )}
 
       {run.takeover && (
         <p className="muted">
@@ -697,12 +840,19 @@ function RunPage({
 function stageModel(run: RunRecord) {
   const step = run.steps[run.steps.length - 1] || {}
   const diverged = step.worldStateMatched === false || run.status === "BLOCKED"
+  const unknown = run.status === "UNKNOWN" || step.actionOutcome === "UNKNOWN"
   return [
     {
       key: "INTENT",
       label: "Intent",
       state: step.intent ? "ok" : "",
       detail: step.intent || "No intent recorded",
+    },
+    {
+      key: "AUTHORIZATION",
+      label: "Authorization",
+      state: step.status && step.status !== "planned" && step.status !== "rejected" ? "ok" : step.status === "rejected" ? "bad" : "",
+      detail: step.action?.tool || "No tool",
     },
     {
       key: "ACTION",
@@ -719,7 +869,7 @@ function stageModel(run: RunRecord) {
     {
       key: "VERIFICATION",
       label: "Verification",
-      state: diverged ? "bad" : step.worldStateMatched ? "ok" : "",
+      state: unknown ? "warn" : diverged ? "bad" : step.worldStateMatched ? "ok" : "",
       detail: JSON.stringify(
         {
           agentClaim: step.agentClaim,
@@ -735,8 +885,23 @@ function stageModel(run: RunRecord) {
     {
       key: "COMMIT",
       label: "Commit",
-      state: diverged ? "bad" : run.status === "COMPLETED" ? "ok" : "",
-      detail: diverged ? `BLOCKED\n${run.error || step.error || ""}` : run.status,
+      state: diverged || unknown ? "bad" : run.status === "COMPLETED" || run.status === "COMMITTED" || run.status === "VERIFIED" ? "ok" : "",
+      detail: diverged ? `BLOCKED\n${run.error || step.error || ""}` : unknown ? "UNKNOWN — no retry yet" : run.status,
+    },
+  ]
+}
+
+function unknownStageModel(run: RunRecord) {
+  const step = run.steps[run.steps.length - 1] || {}
+  return [
+    { key: "INTENT", label: "Intent", state: "ok", detail: step.intent || "Action dispatched" },
+    { key: "AUTHORIZED", label: "Authorized", state: "ok", detail: step.action?.tool || "Authorized" },
+    { key: "DISPATCHED", label: "Dispatched", state: "ok", detail: JSON.stringify(step.action || {}, null, 2) },
+    {
+      key: "UNKNOWN",
+      label: "Unknown",
+      state: "warn",
+      detail: "Side effect may have occurred.\nRetry blocked pending verification.",
     },
   ]
 }
@@ -747,16 +912,48 @@ function EnvironmentsPage({ state }: { state: Snapshot }) {
       <div className="page-head">
         <div>
           <h1>Environments</h1>
-          <p>Solari browsers, sandboxes, and desktops. Distinct from workers. Linked by lease.</p>
+          <p>Worker → run → browser / sandbox / desktop. Warm pool reuse is a Meshly lease, not a Solari session id.</p>
         </div>
       </div>
-      {state.environments.length === 0 ? (
+      {state.environments.length === 0 && state.workers.length === 0 ? (
         <div className="empty">
           <h2>No environments yet.</h2>
           <p>A run leases execution resources. They show up here with provider, lease, and session id.</p>
         </div>
       ) : (
-        <EnvTable environments={state.environments} />
+        <>
+          <div className="tree">
+            {state.workers.map((w) => {
+              const runs = state.runs.filter((r) => r.workerId === w.id || r.workerName === w.name)
+              return (
+                <div className="tree-worker" key={w.id}>
+                  <div className="tree-h">
+                    WORKER <a href={`#/workers/${w.id}`}>{w.name}</a>
+                    <span className={`pill ${pillClass(w.displayStatus)}`}>{w.displayStatus}</span>
+                  </div>
+                  {runs.length === 0 && <div className="tree-empty">No runs</div>}
+                  {runs.map((r) => (
+                    <div className="tree-run" key={r.runId}>
+                      <a href={`#/runs/${r.runId}`}>RUN {r.runId}</a>
+                      <span className={`pill ${pillClass(r.status)}`}>{r.status}</span>
+                      <ul>
+                        {(r.environments || []).map((e) => (
+                          <li key={e.id}>
+                            <EnvIcon type={e.type} /> {e.type} · {e.status}
+                            {e.sessionId ? ` · ${e.sessionId.slice(0, 10)}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+          <h2 style={{ fontSize: 13, fontWeight: 560, margin: "28px 0 10px", color: "var(--muted)" }}>Lifecycle</h2>
+          <p className="muted">Warm → Allocated → Running → Paused → Warm pool → Reused</p>
+          <EnvTable environments={state.environments} />
+        </>
       )}
     </main>
   )

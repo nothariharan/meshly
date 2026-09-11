@@ -159,6 +159,7 @@ export class Meshly {
     capabilities: Capability[]
     name?: string
     id?: string
+    kind?: import("@meshly/core").WorkerKind
     priority?: number
     deadline?: Date
     budget?: number
@@ -166,6 +167,7 @@ export class Meshly {
     parentId?: string
     metadata?: Record<string, any>
     initialMemory?: Array<{ key: string; value: any; tier?: "hot" | "warm" | "cold" }>
+    limits?: Partial<import("@meshly/core").WorkerLimits>
   }): Promise<WorkerInstance> {
     return this.runtime.spawn(params)
   }
@@ -175,11 +177,24 @@ export class Meshly {
     options?: {
       artifactDir?: string
       destroyAfter?: boolean
-      scenario?: "default" | "reality-divergence"
+      scenario?: "default" | "reality-divergence" | "ambiguous-timeout"
+      kind?: string
+      signal?: AbortSignal
       onProgress?: (run: RunInstance) => void
     },
   ): Promise<RunInstance> {
     return this.runtime.executeWorker(workerId, options)
+  }
+
+  async resume(runId: string, options?: {
+    artifactDir?: string
+    destroyAfter?: boolean
+    scenario?: "default" | "reality-divergence" | "ambiguous-timeout"
+    kind?: string
+    signal?: AbortSignal
+    onProgress?: (run: RunInstance) => void
+  }): Promise<RunInstance> {
+    return this.runtime.resumeRun(runId, options)
   }
 
   async scheduleNext(): Promise<{ worker?: WorkerInstance; lease?: EnvironmentLease; score?: number }> {
@@ -202,6 +217,16 @@ export class Meshly {
 
   transaction(workerId: string): SagaTransaction {
     return this.runtime.transaction(workerId)
+  }
+
+  async persist(store?: import("@meshly/core").ProjectStore) {
+    const { ProjectStore } = await import("@meshly/core")
+    this.runtime.persist(store || new ProjectStore())
+  }
+
+  async restore(store?: import("@meshly/core").ProjectStore) {
+    const { ProjectStore } = await import("@meshly/core")
+    return this.runtime.restore(store || new ProjectStore())
   }
 
   stats() {

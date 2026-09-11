@@ -9,7 +9,7 @@
  */
 import fs from "node:fs"
 import path from "node:path"
-import { Meshly, AuthorityManager } from "@meshly/sdk"
+import { Meshly, AuthorityManager, inferWorkerKind } from "@meshly/sdk"
 import type { RunInstance, WorkerInstance } from "@meshly/core"
 import { runBenchmark } from "./benchmark.js"
 import { loadEnv, requireSolariKey } from "./env.js"
@@ -89,11 +89,13 @@ function persistWorkerSnapshot(store: ProjectStore, worker: WorkerInstance, runI
   const snapshot: StoredWorker = {
     id: worker.id,
     name: worker.name || existing?.name || worker.id,
+    kind: worker.kind || existing?.kind,
     task: worker.task,
     capabilities: worker.capabilities,
     priority: worker.priority,
     budget: worker.budget.maxSpend,
     spent: worker.budget.spent,
+    limits: worker.limits,
     status: worker.status,
     currentRunId: runId || worker.context.runId || existing?.currentRunId,
     authority: {
@@ -122,6 +124,9 @@ function printRun(run: StoredRun): void {
     console.log(`  ${step.stepIndex}. ${String(step.status).toUpperCase().padEnd(11)} ${step.intent}`)
     console.log(`     Intent → Action → Observe → Verify → ${step.status === "committed" ? "Commit" : "Blocked"}`)
     if (step.observation?.fabricId) console.log(`     Solari ID  ${step.observation.fabricId}`)
+    if (step.observation?.payment_status) console.log(`     Payment    ${step.observation.payment_status}`)
+    if (step.observation?.ledger) console.log(`     Ledger     ${step.observation.ledger}`)
+    if (step.observation?.erp_status) console.log(`     ERP        ${step.observation.erp_status}`)
     if (step.observation?.title) console.log(`     Title      ${step.observation.title}`)
     if (step.observation?.stdout) console.log(`     stdout     ${step.observation.stdout}`)
     if (step.observation?.streamUrl) console.log(`     Stream     ${step.observation.streamUrl}`)
@@ -133,12 +138,67 @@ function printRun(run: StoredRun): void {
   console.log("")
 }
 
+const ALL_TOOLS = [
+  "browser_navigate",
+  "browser_extract",
+  "browser_click",
+  "sandbox_exec",
+  "sandbox_write",
+  "sandbox_read",
+  "desktop_write",
+  "desktop_read",
+  "desktop_screenshot",
+  "desktop_health",
+  "desktop_open",
+  "desktop_type",
+  "desktop_click",
+]
+
+const TEMPLATES: Record<string, { name: string; task: string; capabilities: string[]; kind: string }> = {
+  reconciliation: {
+    name: "invoice-reconciler",
+    task: "Reconcile today's payment records with the ERP",
+    capabilities: ["browser", "sandbox", "desktop"],
+    kind: "reconciliation",
+  },
+  research: {
+    name: "research",
+    task: "Collect information, analyze it, and produce a verified report",
+    capabilities: ["browser", "sandbox"],
+    kind: "research",
+  },
+  coding: {
+    name: "coding",
+    task: "Modify a repository, run tests, and browser-QA the artifact",
+    capabilities: ["sandbox", "browser"],
+    kind: "coding",
+  },
+  operations: {
+    name: "operations",
+    task: "Look up system status, process the incident, and file a desktop ops ticket",
+    capabilities: ["browser", "sandbox", "desktop"],
+    kind: "operations",
+  },
+}
+
+function issueWorkerAuthority(capabilities: string[], budget: number) {
+  return AuthorityManager.issue({
+    tools: ALL_TOOLS,
+    capabilities,
+    domains: ["*"],
+    maxSpend: budget,
+  })
+}
+
 async function cmdWorkerCreate(store: ProjectStore, rest: string[], flags: Record<string, string | boolean>): Promise<void> {
   store.loadConfig()
-  const name = String(flags.name || rest[0] || "").trim()
-  const task = String(flags.task || rest.slice(name && rest[0] === name ? 1 : 0).join(" ") || "").trim()
+  const templateName = String(flags.template || "").trim()
+  const template = templateName ? TEMPLATES[templateName] : undefined
+  const name = String(flags.name || rest[0] || template?.name || "").trim()
+  const task = String(flags.task || rest.slice(name && rest[0] === name ? 1 : 0).join(" ") || template?.task || "").trim()
   if (!name || !task) {
     console.error('Usage: meshly worker create --name <name> --task "<what to do>" [--capabilities browser,sandbox,desktop]')
+    console.error("   or: meshly worker create --template reconciliation|research|coding|operations")
     process.exitCode = 1
     return
   }
@@ -147,22 +207,33 @@ async function cmdWorkerCreate(store: ProjectStore, rest: string[], flags: Recor
     process.exitCode = 1
     return
   }
-  const capabilities = flagList(flags.capabilities, ["browser"])
+  const capabilities = flagList(flags.capabilities, template?.capabilities || ["browser", "sandbox", "desktop"])
+  const kind = String(flags.kind || template?.kind || inferWorkerKind(task) || "probe")
   const worker = {
     id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
     name,
+    kind,
     task,
     capabilities,
     priority: Number(flags.priority || 8),
     budget: Number(flags.budget || 2),
     spent: 0,
+    limits: {
+      maxSpend: Number(flags.budget || 2),
+      maxDurationMs: 30 * 60_000,
+      maxEnvironments: 3,
+      maxRetries: 1,
+      maxToolCalls: 40,
+    },
     status: "CREATED",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
   store.saveWorker(worker)
+  store.savePolicy(worker.id, issueWorkerAuthority(capabilities, worker.budget))
   console.log(`\nCreated worker ${worker.name}`)
   console.log(`  ID            ${worker.id}`)
+  console.log(`  Kind          ${worker.kind}`)
   console.log(`  Task          ${worker.task}`)
   console.log(`  Environments  ${worker.capabilities.join(" · ")}`)
   console.log(`\nRun it:\n  meshly run ${worker.name}\n`)
@@ -207,20 +278,21 @@ async function cmdRun(store: ProjectStore, rest: string[], flags: Record<string,
   const worker = await mesh.spawn({
     id: definition.id,
     name: definition.name,
+    kind: (definition.kind as any) || inferWorkerKind(definition.task),
     task: definition.task,
     capabilities: definition.capabilities,
     priority: definition.priority,
     budget: definition.budget,
-    authority: AuthorityManager.issue({
-      tools: ["browser_navigate", "sandbox_exec", "desktop_screenshot"],
-      capabilities: definition.capabilities,
-      domains: ["example.com"],
-      maxSpend: definition.budget,
-    }),
+    limits: definition.limits,
+    authority: issueWorkerAuthority(definition.capabilities, definition.budget),
   })
 
   const destroyAfter = flags.keep ? false : true
-  const scenario = flags.diverge || flags.fail ? "reality-divergence" : "default"
+  const scenario = flags.timeout
+    ? "ambiguous-timeout"
+    : flags.diverge || flags.fail
+      ? "reality-divergence"
+      : "default"
 
   const run = await worker.run({
     artifactDir: store.artifactDir(),
@@ -246,12 +318,7 @@ async function cmdLive(store: ProjectStore, flags: Record<string, string | boole
     task: "Prove Meshly can lease, act, observe, verify, and commit on real Solari infrastructure",
     capabilities,
     budget: 2,
-    authority: AuthorityManager.issue({
-      tools: ["browser_navigate", "sandbox_exec", "desktop_screenshot"],
-      capabilities,
-      domains: ["example.com"],
-      maxSpend: 2,
-    }),
+    authority: issueWorkerAuthority(capabilities, 2),
   })
 
   const run = await worker.run({
@@ -267,13 +334,14 @@ async function cmdLive(store: ProjectStore, flags: Record<string, string | boole
 async function cmdFail(store: ProjectStore, flags: Record<string, string | boolean>): Promise<void> {
   if (!store.exists()) store.init(path.basename(store.root))
   const mesh = createClient(flags)
-  let definition = store.getWorker("reality-check")
+  let definition = store.getWorker("invoice-reconciler") || store.getWorker("reality-check")
   if (!definition) {
     definition = {
       id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
-      name: "reality-check",
-      task: "Confirm invoice 4421 is paid",
-      capabilities: ["browser"],
+      name: "invoice-reconciler",
+      kind: "reconciliation",
+      task: "Reconcile today's payment records with the ERP",
+      capabilities: ["browser", "sandbox", "desktop"],
       priority: 8,
       budget: 2,
       spent: 0,
@@ -287,22 +355,20 @@ async function cmdFail(store: ProjectStore, flags: Record<string, string | boole
   console.log(`\nMESHLY  mode=${mesh.mode}  scenario=reality-divergence`)
   console.log(`Worker  ${definition.name}`)
   console.log(`Task    ${definition.task}\n`)
-  console.log("Agent will claim success. Tool will return HTTP 200.")
-  console.log("Independent world check expects title: Invoice 4421 paid\n")
+  console.log("Agent claim:        Invoice marked paid / ERP posted")
+  console.log("Solari observation: HTTP 200, payment = PAID")
+  console.log("Independent check:  ERP file on desktop")
+  console.log("Expected decision:  COMMIT BLOCKED\n")
 
   const worker = await mesh.spawn({
     id: definition.id,
     name: definition.name,
+    kind: "reconciliation",
     task: definition.task,
-    capabilities: ["browser"],
+    capabilities: ["browser", "sandbox", "desktop"],
     priority: definition.priority,
     budget: definition.budget,
-    authority: AuthorityManager.issue({
-      tools: ["browser_navigate"],
-      capabilities: ["browser"],
-      domains: ["example.com"],
-      maxSpend: definition.budget,
-    }),
+    authority: issueWorkerAuthority(["browser", "sandbox", "desktop"], definition.budget),
   })
 
   const run = await worker.run({
@@ -314,6 +380,49 @@ async function cmdFail(store: ProjectStore, flags: Record<string, string | boole
   const stored = persistRun(store, mesh, run, worker, true)
   printRun(stored)
   if (run.status !== "BLOCKED") process.exitCode = 1
+}
+
+async function cmdResume(store: ProjectStore, rest: string[], flags: Record<string, string | boolean>): Promise<void> {
+  store.loadConfig()
+  const id = rest[0]
+  if (!id) {
+    console.error("Usage: meshly resume <runId>")
+    process.exitCode = 1
+    return
+  }
+  const stored = store.getRun(id)
+  if (!stored) {
+    console.error(`Run '${id}' not found.`)
+    process.exitCode = 1
+    return
+  }
+  const mesh = createClient(flags)
+  await mesh.restore(store)
+  console.log(`\nMESHLY  mode=${mesh.mode}  resume=${stored.runId}`)
+  const destroyAfter = flags.keep ? false : true
+  const run = await mesh.resume(stored.runId, {
+    artifactDir: store.artifactDir(),
+    destroyAfter,
+    onProgress: (instance) => {
+      const worker = mesh.workers.get(instance.workerId)
+      if (worker) persistRun(store, mesh, instance, worker, instance.status === "RUNNING" ? false : destroyAfter)
+    },
+  })
+  const worker = mesh.workers.get(run.workerId)
+  if (worker) printRun(persistRun(store, mesh, run, worker, destroyAfter))
+  else printRun(store.getRun(run.runId)!)
+  if (run.status !== "COMPLETED" && run.status !== "VERIFIED") process.exitCode = 1
+}
+
+async function cmdQuickstart(store: ProjectStore, flags: Record<string, string | boolean>): Promise<void> {
+  flags.yes = true
+  flags.provider = typeof flags.provider === "string" ? flags.provider : "simulator"
+  await runInit(store, [], { ...flags, yes: true, provider: flags.provider })
+  if (!store.getWorker("invoice-reconciler")) {
+    await cmdWorkerCreate(store, [], { template: "reconciliation" })
+  }
+  await cmdRun(store, ["invoice-reconciler"], { ...flags, simulator: flags.provider === "simulator" || flags.simulator })
+  console.log("Then open the console:\n  meshly dev\n")
 }
 
 async function cmdRuns(store: ProjectStore): Promise<void> {
@@ -410,14 +519,19 @@ Meshly — the operating system for autonomous workers.
 
 Usage:
   meshly init [--provider solari|simulator] [--yes]
+  meshly quickstart [--simulator]          First 10 minutes: init → worker → run
   meshly dev [--port 3400]
+  meshly worker create --template reconciliation|research|coding|operations
   meshly worker create --name <name> --task "<task>" [--capabilities browser,sandbox,desktop]
   meshly workers
-  meshly run <worker> [--simulator]
+  meshly run <worker> [--simulator] [--keep] [--fail] [--timeout]
+  meshly resume <run> [--simulator] [--keep]
   meshly runs
   meshly inspect <run>
   meshly replay <run>
   meshly export <run>
+  meshly restart [--simulator]         Reconnect workers, runs, environments
+  meshly mcp                           Meshly MCP server (stdio) for other agents
   meshly live [--simulator] [--capabilities browser,sandbox,desktop]
   meshly fail [--simulator]           Reality-divergence demo (commit BLOCKED)
 
@@ -436,6 +550,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
   switch (command) {
     case "init":
       await runInit(store, rest, flags)
+      break
+    case "quickstart":
+      await cmdQuickstart(store, flags)
       break
     case "dev": {
       const { startConsole } = await import("@meshly/console")
@@ -458,6 +575,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
     case "run":
       await cmdRun(store, rest, flags)
       break
+    case "resume":
+      await cmdResume(store, rest, flags)
+      break
     case "runs":
       await cmdRuns(store)
       break
@@ -470,6 +590,22 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
     case "export":
       await cmdExport(store, rest)
       break
+    case "restart": {
+      const mesh = createClient(flags)
+      const result = await mesh.restore(store)
+      console.log(`\nMeshly restarted`)
+      console.log(`  Workers      ${result.workers}`)
+      console.log(`  Runs         ${result.runs}`)
+      console.log(`  Reconnected  ${result.reconnected}`)
+      console.log(`  Lost         ${result.lost}\n`)
+      break
+    }
+    case "mcp": {
+      const { startMeshlyMcpServer } = await import("@meshly/sdk")
+      const mesh = flags.simulator ? new Meshly({ preferSimulator: true }) : createClient(flags)
+      await startMeshlyMcpServer({ runtime: mesh.runtime, store })
+      return
+    }
     case "live":
       await cmdLive(store, flags)
       break

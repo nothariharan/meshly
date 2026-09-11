@@ -64,11 +64,13 @@ function persistFromRuntime(store: ProjectStore, mesh: Meshly, run: any, worker:
   store.saveWorker({
     id: worker.id,
     name: worker.name || existing?.name || worker.id,
+    kind: worker.kind || existing?.kind,
     task: worker.task,
     capabilities: worker.capabilities,
     priority: worker.priority,
     budget: worker.budget.maxSpend,
     spent: worker.budget.spent,
+    limits: worker.limits,
     status: worker.status,
     currentRunId: run.runId,
     authority: {
@@ -105,7 +107,11 @@ export function snapshot(store: ProjectStore) {
   const environments = initialized ? store.listEnvironments() : []
   const { mode, label } = providerLabel(store)
   const attention = runs.filter(
-    (r) => r.status === "BLOCKED" || r.status === "VERIFICATION_FAILED" || r.steps?.some((s: any) => s.worldStateMatched === false),
+    (r) =>
+      r.status === "BLOCKED" ||
+      r.status === "UNKNOWN" ||
+      r.status === "VERIFICATION_FAILED" ||
+      r.steps?.some((s: any) => s.worldStateMatched === false),
   )
   const occupied = environments.filter((e) => e.status === "BUSY" || e.status === "ACTIVE" || e.status === "READY")
   const failedVerify = attention.length
@@ -117,13 +123,16 @@ export function snapshot(store: ProjectStore) {
     workers: workers.map((w) => decorateWorker(w, runs, environments)),
     runs,
     environments,
+    meters: {
+      maxConcurrency: 10,
+    },
     policies: workers.map((w) => ({
       workerId: w.id,
       workerName: w.name,
       authority: w.authority || {
-        tools: ["browser_navigate", "sandbox_exec", "desktop_screenshot"],
+        tools: ["browser_navigate", "browser_extract", "sandbox_exec", "desktop_write"],
         capabilities: w.capabilities,
-        domains: ["example.com"],
+        domains: ["*"],
         maxSpend: w.budget,
       },
     })),
@@ -196,6 +205,7 @@ function decorateWorker(worker: StoredWorker, runs: StoredRun[], environments: S
   let displayStatus = worker.status || "CREATED"
   if (latest?.status === "COMPLETED") displayStatus = "VERIFIED"
   else if (latest?.status === "BLOCKED" || latest?.status === "VERIFICATION_FAILED") displayStatus = "BLOCKED"
+  else if (latest?.status === "UNKNOWN" || latest?.status === "VERIFYING") displayStatus = "UNKNOWN"
   else if (latest?.status === "RUNNING" || inflight.has(worker.id)) displayStatus = "RUNNING"
   else if (latest?.status === "PAUSED") displayStatus = "PAUSED"
   return {
@@ -245,15 +255,25 @@ export async function handleApi(
     if (store.getWorker(name)) return { status: 409, error: `Worker '${name}' already exists.` }
     const capabilities = Array.isArray(body?.capabilities) && body.capabilities.length
       ? body.capabilities
-      : ["browser"]
+      : body?.kind === "research"
+        ? ["browser", "sandbox"]
+        : ["browser", "sandbox", "desktop"]
     const worker: StoredWorker = {
       id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
       name,
+      kind: body?.kind,
       task,
       capabilities,
       priority: Number(body?.priority || 8),
       budget: Number(body?.budget || 2),
       spent: 0,
+      limits: {
+        maxSpend: Number(body?.budget || 2),
+        maxDurationMs: 30 * 60_000,
+        maxEnvironments: 3,
+        maxRetries: 1,
+        maxToolCalls: 40,
+      },
       status: "CREATED",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -266,19 +286,25 @@ export async function handleApi(
   const workerRun = pathname.match(/^\/api\/workers\/([^/]+)\/run$/)
   if (method === "POST" && workerRun) {
     const id = decodeURIComponent(workerRun[1])
-    const scenario = body?.scenario === "reality-divergence" ? "reality-divergence" : "default"
+    const scenario =
+      body?.scenario === "reality-divergence"
+        ? "reality-divergence"
+        : body?.scenario === "ambiguous-timeout"
+          ? "ambiguous-timeout"
+          : "default"
     return startWorkerRun(store, id, scenario)
   }
 
   if (method === "POST" && pathname === "/api/fail") {
     store.ensure(path.basename(store.root), providerLabel(store).mode === "live" ? "solari" : "simulator")
-    let worker = store.getWorker("reality-check")
+    let worker = store.getWorker("invoice-reconciler") || store.getWorker("reality-check")
     if (!worker) {
       worker = {
         id: `wrk_${Math.random().toString(36).slice(2, 9)}`,
-        name: "reality-check",
-        task: "Confirm invoice 4421 is paid",
-        capabilities: ["browser"],
+        name: "invoice-reconciler",
+        kind: "reconciliation",
+        task: "Reconcile today's payment records with the ERP",
+        capabilities: ["browser", "sandbox", "desktop"],
         priority: 8,
         budget: 2,
         spent: 0,
@@ -301,6 +327,16 @@ export async function handleApi(
     return takeoverRun(store, decodeURIComponent(takeover[1]))
   }
 
+  const cancel = pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/)
+  if (method === "POST" && cancel) {
+    return cancelRun(store, decodeURIComponent(cancel[1]))
+  }
+
+  const resume = pathname.match(/^\/api\/runs\/([^/]+)\/resume$/)
+  if (method === "POST" && resume) {
+    return resumeStoredRun(store, decodeURIComponent(resume[1]))
+  }
+
   const compensate = pathname.match(/^\/api\/runs\/([^/]+)\/compensate$/)
   if (method === "POST" && compensate) {
     return compensateRun(store, decodeURIComponent(compensate[1]))
@@ -317,7 +353,7 @@ export async function handleApi(
 async function startWorkerRun(
   store: ProjectStore,
   id: string,
-  scenario: "default" | "reality-divergence",
+  scenario: "default" | "reality-divergence" | "ambiguous-timeout",
 ): Promise<{ status: number; json?: any; error?: string }> {
   const definition = store.getWorker(id)
   if (!definition) return { status: 404, error: `Worker '${id}' not found.` }
@@ -327,18 +363,22 @@ async function startWorkerRun(
   broadcast(store)
 
   const mesh = createMesh(store)
-  const caps = scenario === "reality-divergence" ? ["browser"] : definition.capabilities
+  const caps =
+    scenario === "reality-divergence" || scenario === "ambiguous-timeout"
+      ? ["browser", "sandbox", "desktop"]
+      : definition.capabilities
   const worker = await mesh.spawn({
     id: definition.id,
     name: definition.name,
+    kind: (definition.kind as any) || (scenario === "reality-divergence" ? "reconciliation" : undefined),
     task: definition.task,
     capabilities: caps,
     priority: definition.priority,
     budget: definition.budget,
     authority: AuthorityManager.issue({
-      tools: ["browser_navigate", "sandbox_exec", "desktop_screenshot"],
+      tools: ["*"],
       capabilities: caps,
-      domains: ["example.com"],
+      domains: ["*"],
       maxSpend: definition.budget,
     }),
   })
@@ -458,6 +498,61 @@ function takeoverRun(store: ProjectStore, runId: string): { status: number; json
   store.saveRun(run)
   broadcast(store)
   return { status: 200, json: { run, takeover: run.takeover } }
+}
+
+function cancelRun(store: ProjectStore, runId: string): { status: number; json?: any; error?: string } {
+  const run = store.getRun(runId)
+  if (!run) return { status: 404, error: "Run not found" }
+  run.status = "CANCELLED"
+  run.completedAt = Date.now()
+  run.error = run.error || "Cancelled by operator"
+  appendEvent(run, "run.cancelled", { reason: "operator" })
+  store.saveRun(run)
+  const worker = store.getWorker(run.workerId)
+  if (worker) {
+    worker.status = "CANCELLED"
+    worker.updatedAt = new Date().toISOString()
+    store.saveWorker(worker)
+  }
+  broadcast(store)
+  return { status: 200, json: { run } }
+}
+
+function resumeStoredRun(store: ProjectStore, runId: string): { status: number; json?: any; error?: string } {
+  const stored = store.getRun(runId)
+  if (!stored) return { status: 404, error: "Run not found" }
+  if (inflight.has(stored.workerId)) return { status: 409, error: "Worker already running." }
+
+  inflight.set(stored.workerId, { runId: stored.runId })
+  broadcast(store)
+
+  const mesh = createMesh(store)
+  void mesh
+    .restore(store)
+    .then(() =>
+      mesh.resume(stored.runId, {
+        artifactDir: store.artifactDir(),
+        destroyAfter: true,
+        onProgress: (instance) => {
+          const worker = mesh.workers.get(instance.workerId)
+          if (worker) persistFromRuntime(store, mesh, instance, worker, instance.status !== "RUNNING")
+          broadcast(store)
+        },
+      }),
+    )
+    .then((run) => {
+      const worker = mesh.workers.get(run.workerId)
+      if (worker) persistFromRuntime(store, mesh, run, worker, true)
+    })
+    .catch((err) => {
+      inflight.set(stored.workerId, { error: err instanceof Error ? err.message : String(err) })
+    })
+    .finally(() => {
+      inflight.delete(stored.workerId)
+      broadcast(store)
+    })
+
+  return { status: 202, json: { runId: stored.runId, status: "RUNNING" } }
 }
 
 function compensateRun(store: ProjectStore, runId: string): { status: number; json?: any; error?: string } {
