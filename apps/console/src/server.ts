@@ -143,7 +143,9 @@ export function startConsole(portOrOpts: number | ConsoleOptions = DEFAULT_PORT)
     if (opts.quiet) return
     const addr = server.address()
     const bound = typeof addr === "object" && addr ? addr.port : port
-    console.log(`[Meshly] Operator console  http://localhost:${bound}`)
+    console.log(`\nMeshly workspace\n`)
+    console.log(`  http://localhost:${bound}\n`)
+    console.log(`  Your workers are local to this machine.\n`)
   })
   return server
 }

@@ -6,8 +6,10 @@ import { RealityDivergence } from "./components/RealityDivergence"
 import { UnknownRecovery } from "./components/UnknownRecovery"
 import { WorkerWorkspace } from "./components/WorkerWorkspace"
 import { InstallTerminal } from "./components/InstallTerminal"
+import { WorksWithAgents } from "./components/WorksWithAgents"
 
 const GH = "https://github.com/nothariharan/meshly"
+const WORKSPACE = "http://localhost:3400"
 
 export function App() {
   return (
@@ -165,6 +167,7 @@ export function App() {
             </p>
           </div>
           <InstallTerminal />
+          <WorksWithAgents />
         </div>
       </section>
 
@@ -196,6 +199,9 @@ function Nav() {
           <a className="gh" href={GH} target="_blank" rel="noreferrer">
             <GithubLogo size={14} weight="fill" />
             <span className="star">★</span> GitHub
+          </a>
+          <a className="btn sm" href={WORKSPACE} target="_blank" rel="noreferrer">
+            Open workspace
           </a>
           <a className="btn primary sm" href="#install">
             Get started <ArrowRight size={14} weight="bold" />
@@ -234,13 +240,14 @@ function Hero() {
             </button>
           </div>
           <div className="hero-actions">
-            <a className="btn primary" href="#how">
+            <a className="btn primary" href="#install">
               Get started <ArrowRight size={15} weight="bold" />
             </a>
-            <a className="btn ghost" href={GH} target="_blank" rel="noreferrer">
-              View on GitHub
+            <a className="btn ghost" href={WORKSPACE} target="_blank" rel="noreferrer">
+              Open workspace
             </a>
           </div>
+          <p className="hero-note">The workspace is local to your machine — `meshly dev` serves it at localhost:3400.</p>
         </div>
         <HeroWindow />
       </div>
