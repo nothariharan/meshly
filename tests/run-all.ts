@@ -13,6 +13,7 @@ import { runAgentAgnosticTests } from "./agent-agnostic/agent-agnostic.test.js"
 import { runProductExecuteTests } from "./product/execute.test.js"
 import { runRuntimeProductTests } from "./product/runtime.test.js"
 import { runHardeningTests } from "./product/hardening.test.js"
+import { runUnknownSequenceTests } from "./product/unknown-sequence.test.js"
 
 async function main() {
   const startTime = Date.now()
@@ -32,6 +33,7 @@ async function main() {
   const product = await runProductExecuteTests()
   const runtimeProduct = await runRuntimeProductTests()
   const hardening = await runHardeningTests()
+  const unknownSequence = await runUnknownSequenceTests()
 
   const allPassed =
     invariants.passed &&
@@ -44,12 +46,13 @@ async function main() {
     agentAgnostic.passed &&
     product.passed &&
     runtimeProduct.passed &&
-    hardening.passed
+    hardening.passed &&
+    unknownSequence.passed
 
   const duration = Date.now() - startTime
 
   console.log("\n" + "=".repeat(80))
-  console.log("  TEST SUMMARY MATRIX (11/11 SUITES)")
+  console.log("  TEST SUMMARY MATRIX (12/12 SUITES)")
   console.log("=".repeat(80))
   console.log(`  1. Invariant Tests:        ${invariants.passed ? "✓ PASSED (14/14 Invariants)" : "✗ FAILED"}`)
   console.log(`  2. Distributed Edge Cases: ${distributedEdgeCases.passed ? "✓ PASSED (3/3 Scenarios: Re-verification, State Detection, Causal Events)" : "✗ FAILED"}`)
@@ -62,6 +65,7 @@ async function main() {
   console.log(`  9. Product Execute Loop:   ${product.passed ? "✓ PASSED (Worker → Run → Verify → Commit)" : "✗ FAILED"}`)
   console.log(` 10. Runtime Product:        ${runtimeProduct.passed ? "✓ PASSED (Reconciliation, UNKNOWN, workers, persist)" : "✗ FAILED"}`)
   console.log(` 11. Product Hardening:      ${hardening.passed ? "✓ PASSED (Limits, recovery, public API, MCP)" : "✗ FAILED"}`)
+  console.log(` 12. Unknown Sequence:       ${unknownSequence.passed ? "✓ PASSED (Observed world → VERIFIED / SAFE_TO_RETRY)" : "✗ FAILED"}`)
   console.log("-".repeat(80))
   console.log(`  TOTAL STATUS:              ${allPassed ? "100% GREEN • VERIFIED RUNTIME KERNEL (TESTED SAFETY INVARIANTS)" : "FAILURES ENCOUNTERED"}`)
   console.log(`  ELAPSED TIME:              ${duration}ms`)

@@ -1,5 +1,14 @@
 # Meshly SDK Developer Guide
 
+Action outcomes are first-class: `SUCCESS`, `FAILURE`, `UNKNOWN`.
+**UNKNOWN does not mean FAILED.** See [concepts/unknown.md](concepts/unknown.md).
+
+```ts
+if (run.status === "UNKNOWN") {
+  await run.verify()
+}
+```
+
 `@meshly/sdk` is the unified developer kit for building and operating autonomous workers.
 
 ```bash

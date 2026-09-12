@@ -1,4 +1,4 @@
-import { Meshly } from "@meshly/sdk"
+import { Meshly, explainDecision, formatDecision, formatUserError, MeshlyError, isUnknownStatus } from "@meshly/sdk"
 import { ProjectStore } from "../../packages/core/src/persist/store.js"
 import os from "node:os"
 import path from "node:path"
@@ -41,6 +41,42 @@ export async function runRuntimeProductTests(): Promise<{ passed: boolean }> {
   ok("no automatic retry event after UNKNOWN", !timeoutMesh.events.query({ runId: unknown.runId }).some((e) => e.type === "action.executed" && e.data?.retry === true))
   ok("independent verification ran", timeoutMesh.events.query({ runId: unknown.runId }).some((e) => e.type === "verification.independent"))
   ok("side effect found → VERIFIED", unknown.status === "VERIFIED", unknown.status)
+  ok("UNKNOWN is not FAILED", unknown.status !== "FAILED")
+  ok("run.unknown is false after VERIFIED", unknown.unknown === false)
+  const unknownWhy = formatDecision(unknown.explain({ policy: "finance.reconcile", authority: unknown.workerId }))
+  ok("UNKNOWN explanation says not FAILED", unknownWhy.includes("UNKNOWN does not mean FAILED") && unknownWhy.includes("Independent verification"))
+  const recheck = await unknown.verify()
+  ok("run.verify does not retry the side effect", recheck.matched === true)
+  const resumedVerified = await unknown.resume()
+  ok("resume of VERIFIED is idempotent", resumedVerified.runId === unknown.runId && resumedVerified.status === "VERIFIED")
+
+  const blockedMesh = new Meshly({ preferSimulator: true })
+  const blockedWorker = await blockedMesh.spawn({
+    name: "invoice-reconciler",
+    kind: "reconciliation",
+    task: "Reconcile today's payment records with the ERP",
+    capabilities: ["browser", "sandbox", "desktop"],
+  })
+  const blocked = await blockedWorker.run({ destroyAfter: true, scenario: "reality-divergence" })
+  const blockedWhy = formatDecision(explainDecision(blocked, { policy: "finance.reconcile", authority: blocked.workerId }))
+  ok("blocked decision is COMMIT BLOCKED", blocked.status === "BLOCKED" && blockedWhy.includes("COMMIT BLOCKED"))
+  ok("blocked explanation names ERP mismatch", blockedWhy.includes("UNPAID") && blockedWhy.includes("finance.reconcile"))
+
+  const committedWhy = formatDecision(explainDecision(committed, { policy: "finance.reconcile", authority: committed.workerId }))
+  ok("committed decision is explainable", committedWhy.includes("Commit was allowed."))
+
+  const capacity = formatUserError(
+    new MeshlyError({
+      code: "CONCURRENCY_LIMIT",
+      title: "Meshly could not allocate a Desktop environment.",
+      reason: "Solari concurrency limit reached.",
+      runId: "run_8721",
+      action: "The worker was placed in WAITING state.\nNo work was lost.",
+      retry: "meshly resume run_8721",
+    }),
+  )
+  ok("user-facing concurrency error", capacity.includes("Solari concurrency limit reached.") && capacity.includes("meshly resume run_8721"))
+  ok("isUnknownStatus", isUnknownStatus("UNKNOWN") && !isUnknownStatus("FAILED"))
 
   const research = await new Meshly({ preferSimulator: true }).spawn({
     name: "research",

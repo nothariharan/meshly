@@ -104,6 +104,26 @@ export async function runHardeningTests(): Promise<{ passed: boolean }> {
   ok("resume from checkpoint completes remaining work", resumed.status === "COMPLETED", resumed.status + " " + resumed.error)
   ok("resumed run kept the original run id", resumed.runId === crashed.runId)
 
+  const lostMesh = new Meshly({ preferSimulator: true })
+  const lostWorker = await lostMesh.workers.spawn({
+    name: "invoice-reconciler",
+    kind: "reconciliation",
+    task: "Reconcile today's payment records with the ERP",
+    capabilities: ["browser", "sandbox", "desktop"],
+  })
+  let crashedSandbox = false
+  const unsub = lostMesh.events.subscribe((event) => {
+    if (event.type === "solari.sandbox.created" && !crashedSandbox && event.environmentId) {
+      crashedSandbox = true
+      void lostMesh.failures.inject({ type: "CRASH_ENVIRONMENT", targetEnvironmentId: event.environmentId })
+    }
+  })
+  const recovered = await lostWorker.run({ destroyAfter: true })
+  unsub()
+  ok("environment lost during sandbox is recovered", recovered.status === "COMPLETED", recovered.status + " " + recovered.error)
+  ok("environment.lost was recorded", lostMesh.events.query({ type: "environment.lost" }).length >= 1)
+  ok("replacement sandbox was allocated", lostMesh.events.query({ type: "solari.sandbox.created" }).length >= 2)
+
   const research = await runResearchWorker(new Meshly({ preferSimulator: true }))
   ok("research worker uses only public API", research.status === "COMPLETED", research.error)
   const coding = await runCodingWorker(new Meshly({ preferSimulator: true }))
