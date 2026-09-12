@@ -13,9 +13,9 @@ const packages = [
   "packages/cli",
 ]
 
-function run(label, cmd, args) {
+function run(label, cmd, args, cwd = root) {
   console.log(`\n▸ ${label}`)
-  const result = spawnSync(cmd, args, { stdio: "inherit", shell: true, cwd: root })
+  const result = spawnSync(cmd, args, { stdio: "inherit", shell: true, cwd })
   if (result.status !== 0) {
     process.exit(result.status ?? 1)
   }
@@ -23,9 +23,9 @@ function run(label, cmd, args) {
 
 for (const dir of packages) {
   const abs = path.join(root, dir)
-  run(`tsc ${dir}`, "npx", ["tsc", "-p", path.join(dir, "tsconfig.json")])
+  run(`tsc ${dir}`, "npx", ["tsc", "-p", "tsconfig.json"], abs)
   if (dir === "apps/console") {
-    run("vite console", "npx", ["vite", "build", "--config", path.join(dir, "vite.config.ts")])
+    run("vite console", "npx", ["vite", "build"], abs)
   }
   if (existsSync(license)) {
     copyFileSync(license, path.join(abs, "LICENSE"))

@@ -85,10 +85,25 @@ function runMeshly(args) {
 }
 
 runMeshly(["init", "--yes", "--provider", "simulator"])
-runMeshly(["live", "--simulator", "--capabilities", "browser"])
+const doctor = runMeshly(["doctor", "--simulator"])
+if (!doctor.stdout?.includes("Meshly is ready.")) {
+  console.error("doctor missing Meshly is ready.")
+  process.exit(1)
+}
+runMeshly(["run", "--simulator"])
+const blocked = runMeshly(["fail", "--simulator"])
+if (!blocked.stdout?.includes("COMMIT BLOCKED")) {
+  console.error("fail demo missing COMMIT BLOCKED signature")
+  process.exit(1)
+}
+const unknown = runMeshly(["demo", "unknown", "--simulator"])
+if (!unknown.stdout?.includes("UNKNOWN") || !unknown.stdout?.includes("Independent verification")) {
+  console.error("unknown demo missing UNKNOWN signature")
+  process.exit(1)
+}
 const help = runMeshly(["help"])
-if (!help.stdout?.includes("meshly init")) {
-  console.error("CLI help missing init")
+if (!help.stdout?.includes("meshly doctor") || !help.stdout?.includes("meshly init")) {
+  console.error("CLI help missing doctor/init")
   process.exit(1)
 }
 

@@ -15,7 +15,9 @@
     "paths": {
       "@meshly/core": ["packages/core/src/index.ts"],
       "@meshly/solari": ["packages/solari/src/index.ts"],
-      "@meshly/sdk": ["packages/sdk/src/index.ts"]
+      "@meshly/sdk": ["packages/sdk/src/index.ts"],
+      "@meshly/console": ["apps/console/src/server.ts"],
+      "@meshly/cli": ["packages/cli/src/index.ts"]
     }
   },
   "include": [
