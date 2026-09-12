@@ -11,38 +11,30 @@ Solari provides the environment.
 ```bash
 npm install -g meshly
 meshly init
+meshly doctor
+meshly run
+meshly dev
 ```
 
-From this repo (packages are not on npm yet):
-
-```bash
-npm install
-npm run meshly -- init --yes --provider simulator
-npm run meshly -- run invoice-reconciler --simulator
-npm run meshly -- dev
-```
-
-## Quickstart
+`meshly init` needs a Solari API key (`--api-key` or `SOLARI_API_KEY`). Meshly will not silently fall back to a simulator.
 
 ```text
-Connect Solari
-     ↓
-Create worker
-     ↓
-Run worker
-     ↓
-Open console
-     ↓
-See real execution
-```
-
-```bash
-meshly init
-meshly run invoice-reconciler
-meshly dev                 # http://localhost:3400
+install
+  ↓
+connect Solari
+  ↓
+create worker
+  ↓
+run worker
+  ↓
+open console
 ```
 
 ## Console
+
+```bash
+meshly dev                 # http://localhost:3400
+```
 
 Click Worker → Run → Environment → Evidence.
 
@@ -53,12 +45,29 @@ AUTHORIZE → EXECUTE → OBSERVE → VERIFY → COMMIT
 If the world state is unknown, Meshly does not retry.
 
 ```text
-✓ Intent
-✓ Authorized
-✓ Dispatched
 ⚠ UNKNOWN
 Side effect may have occurred.
-Retry blocked pending verification.
+Retry blocked.
+
+Independent verification
+World state confirmed
+
+VERIFIED
+```
+
+If the agent and the world disagree:
+
+```text
+Agent claim     SUCCESS
+Tool execution  SUCCESS
+World state     MISMATCH
+
+COMMIT BLOCKED
+```
+
+```bash
+meshly demo unknown
+meshly demo blocked
 ```
 
 ## SDK
@@ -85,23 +94,39 @@ await run.cancel()
 
 You should not have to manage Solari sessions yourself.
 
-## Packages
+```ts
+if (run.status === "UNKNOWN") {
+  await run.verify()
+}
+```
 
-The user installs Meshly. Internals:
+UNKNOWN does not mean FAILED. Verification does not retry the side effect. See [docs/concepts/unknown.md](docs/concepts/unknown.md).
 
-| Package | Role |
-|---|---|
-| `meshly` | CLI / main entry |
-| `@meshly/sdk` | Developer SDK |
-| `@meshly/core` | Runtime internals |
-| `@meshly/solari` | Solari execution adapter |
-| `@meshly/console` | Operator console (`meshly dev`) |
+The canonical worker is [examples/reconciliation-worker](examples/reconciliation-worker).
 
-Not published yet. Architecture notes live in [`docs/`](docs/). Frozen API: [`docs/api.md`](docs/api.md).
+## From this repo
+
+Packages are not on npm yet. From a clone:
+
+```bash
+npm install
+npm run build
+npm run meshly -- init --yes --provider simulator
+npm run meshly -- doctor --simulator
+npm run meshly -- run
+npm run meshly -- dev
+```
+
+To install on a machine that has never seen this repo, without publishing:
+
+```bash
+npm run pack:local
+npm install -g ./dist/npm/meshly-0.1.0.tgz ./dist/npm/meshly-cli-0.1.0.tgz ./dist/npm/meshly-core-0.1.0.tgz ./dist/npm/meshly-sdk-0.1.0.tgz ./dist/npm/meshly-solari-0.1.0.tgz ./dist/npm/meshly-console-0.1.0.tgz
+```
 
 ## Honesty
 
-- Live Solari is the default when `SOLARI_API_KEY` is set. Failures surface. No silent simulator fallback.
+- Live Solari is the default when you connect a key. Failures surface. No silent simulator fallback.
 - `meshly simulate` / `meshly benchmark` are scheduler simulations, not live Solari capacity tests.
 - SHA-256 on a run is tamper-evident execution evidence. It does not prove the observation is true.
 
