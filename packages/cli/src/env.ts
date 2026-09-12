@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { MeshlyError } from "@meshly/sdk"
 
 /**
  * Load `.env` then `.meshly/.env` into process.env without overwriting
@@ -31,10 +32,13 @@ export function loadEnv(cwd: string = process.cwd()): void {
 export function requireSolariKey(): string {
   const key = process.env.SOLARI_API_KEY
   if (!key) {
-    throw new Error(
-      "No SOLARI_API_KEY. Meshly will not pretend live Solari ran.\n" +
-        "  Set it in .env (see .env.example) or pass --simulator for a local kernel demo.",
-    )
+    throw new MeshlyError({
+      code: "MISSING_API_KEY",
+      title: "Meshly is not connected to Solari.",
+      reason: "No SOLARI_API_KEY. Meshly will not pretend live infrastructure ran.",
+      action: "No environments were allocated.",
+      retry: "meshly init --api-key <your Solari key>",
+    })
   }
   return key
 }

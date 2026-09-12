@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Meshly CLI — init, run, inspect, and operate autonomous workers.",
+  "description": "Meshly CLI — init, doctor, run, and operate autonomous workers.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nothariharan/meshly.git",

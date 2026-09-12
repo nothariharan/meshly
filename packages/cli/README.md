@@ -1,10 +1,11 @@
-# @meshly/cli
-
-Human interface for Meshly.
+# meshly CLI
 
 ```bash
-npx meshly init
-npx meshly dev
-npx meshly worker create --name research --task "Open example.com" --capabilities browser
-npx meshly run research
+npm install -g meshly
+meshly init
+meshly doctor
+meshly run
+meshly dev
 ```
+
+`meshly` is the product. You should not need `@meshly/core`, `@meshly/cli`, or the monorepo.

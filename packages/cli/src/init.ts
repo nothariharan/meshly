@@ -16,20 +16,19 @@ export async function runInit(
   let execution: "solari" | "simulator"
   if (provider === "simulator" || provider === "local") {
     execution = "simulator"
-  } else if (provider === "solari") {
-    execution = "solari"
-  } else if (process.env.SOLARI_API_KEY) {
-    execution = "solari"
-  } else if (yes) {
-    execution = "simulator"
   } else {
-    execution = process.env.SOLARI_API_KEY ? "solari" : "simulator"
+    execution = "solari"
   }
 
   if (execution === "solari") {
     const key = typeof flags["api-key"] === "string" ? flags["api-key"] : process.env.SOLARI_API_KEY
     if (!key) {
-      throw new Error("Solari selected but no API key. Pass --api-key, set SOLARI_API_KEY, or use --provider simulator.")
+      throw new Error(
+        "No SOLARI_API_KEY.\n" +
+          "  meshly init --api-key <key>\n" +
+          "  or set SOLARI_API_KEY in the environment.\n" +
+          "  For a local kernel demo only: meshly init --provider simulator --yes",
+      )
     }
     process.env.SOLARI_API_KEY = key
     const envPath = path.join(store.root, ".env")
@@ -70,6 +69,7 @@ export async function runInit(
       try {
         const worker = await mesh.spawn({
           name: `probe-${cap}`,
+          kind: "probe",
           task: `Probe ${cap} execution`,
           capabilities: [cap],
           budget: 1,
@@ -92,9 +92,10 @@ export async function runInit(
   console.log("\n[3] Create worker")
   seedCanonicalWorker(store)
 
-  console.log("\n[4] Open console")
-  console.log("    meshly run invoice-reconciler")
-  console.log("    meshly dev → http://localhost:3400")
+  console.log("\n[4] Next")
+  console.log("    meshly doctor")
+  console.log("    meshly run")
+  console.log("    meshly dev          → http://localhost:3400")
   console.log("\nReady.\n")
 }
 

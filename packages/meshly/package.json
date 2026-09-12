@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Meshly CLI entry — npx meshly init",
+  "description": "Meshly — the operating system for autonomous workers.",
+  "keywords": ["meshly", "solari", "autonomous-workers", "browser", "sandbox", "desktop"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nothariharan/meshly.git",
