@@ -62,13 +62,13 @@ code, .mono { font-family: var(--mono); }
   align-items: center;
   gap: 28px;
 }
-.nav-brand { display: flex; align-items: center; gap: 10px; }
+.nav-brand { display: flex; align-items: center; gap: 12px; }
 .nav-brand .glyph {
-  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2);
+  width: 40px; height: 40px; border-radius: 11px; border: 1px solid var(--line-2);
   background: #000; display: grid; place-items: center; overflow: hidden;
 }
-.nav-brand .glyph img { width: 24px; height: 24px; object-fit: contain; }
-.nav-brand .word { font-size: 14px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.nav-brand .glyph img { width: 34px; height: 34px; object-fit: contain; }
+.nav-brand .word { height: 21px; width: auto; display: block; }
 .nav-links { display: flex; gap: 22px; flex: 1; }
 .nav-links a { color: var(--muted); font-size: 14px; transition: color 0.15s ease; }
 .nav-links a:hover { color: var(--text); }
@@ -367,9 +367,9 @@ section { border-top: 1px solid var(--line); }
 .footer { border-top: 1px solid var(--line); margin-top: 40px; }
 .footer-inner { display: flex; align-items: center; justify-content: space-between; padding: 44px 28px 24px; gap: 24px; }
 .footer-brand { display: flex; align-items: center; gap: 14px; }
-.footer-brand .glyph { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line-2); background: #000; display: grid; place-items: center; overflow: hidden; }
-.footer-brand .glyph img { width: 30px; height: 30px; object-fit: contain; }
-.footer-brand .word { font-size: 14px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.footer-brand .glyph { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: #000; display: grid; place-items: center; overflow: hidden; }
+.footer-brand .glyph img { width: 38px; height: 38px; object-fit: contain; }
+.footer-brand .word { height: 22px; width: auto; display: block; }
 .footer-links { display: flex; gap: 24px; }
 .footer-links a { color: var(--muted); font-size: 14px; }
 .footer-links a:hover { color: var(--text); }

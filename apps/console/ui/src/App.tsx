@@ -296,6 +296,9 @@ function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
+        <span className="glyph">
+          <img src="/logo.png" alt="" />
+        </span>
         <img className="wordmark" src="/text_logo.png" alt="Meshly" />
       </div>
       <div className="sidebar-body">

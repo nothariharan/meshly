@@ -181,7 +181,7 @@ function Nav() {
           <span className="glyph">
             <img src="/logo.png" alt="" />
           </span>
-          <span className="word">Meshly</span>
+          <img className="word" src="/text_logo.png" alt="Meshly" />
         </a>
         <nav className="nav-links">
           <a href="#how">How it works</a>
@@ -357,8 +357,8 @@ function Footer() {
             <img src="/logo.png" alt="" />
           </span>
           <div>
-            <div className="word">Meshly</div>
-            <div className="faint" style={{ fontSize: 13 }}>
+            <img className="word" src="/text_logo.png" alt="Meshly" />
+            <div className="faint" style={{ fontSize: 13, marginTop: 6 }}>
               Agents can reason. Meshly makes sure the work actually happens.
             </div>
           </div>
