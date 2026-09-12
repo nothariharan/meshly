@@ -1,6 +1,5 @@
 import { ArrowRight, Check, Copy, GithubLogo } from "@phosphor-icons/react"
 import { useState } from "react"
-import { ExecutionGraph } from "./components/ExecutionGraph"
 import { EnvironmentFlow } from "./components/EnvironmentFlow"
 import { RealityDivergence } from "./components/RealityDivergence"
 import { UnknownRecovery } from "./components/UnknownRecovery"
@@ -8,6 +7,8 @@ import { WorkerWorkspace } from "./components/WorkerWorkspace"
 import { InstallTerminal } from "./components/InstallTerminal"
 import { WorksWithAgents } from "./components/WorksWithAgents"
 import { ArchitectureDiagram } from "./components/ArchitectureDiagram"
+import { HowItWorks } from "./components/HowItWorks"
+import { HeroConsole } from "./components/HeroConsole"
 
 const GH = "https://github.com/nothariharan/meshly"
 const WORKSPACE = "http://localhost:3400"
@@ -20,21 +21,7 @@ export function App() {
 
       <section id="how">
         <div className="wrap section-pad">
-          <div className="section-head">
-            <div className="eyebrow">How it works</div>
-            <h2>From intention to verified execution.</h2>
-            <p className="lead">
-              Meshly sits between your agent and real-world environments, managing permissions, resources, state, and
-              verification.
-            </p>
-          </div>
-          <div className="pipeline-row">
-            <PipelineNode label="Agent" sub="Claude / GPT / MCP" />
-            <PipelineArrow />
-            <PipelineNode label="Meshly" sub="Policy · Runtime · Verification" accent />
-            <PipelineArrow />
-            <PipelineNode label="Solari" sub="Browser · Sandbox · Desktop" />
-          </div>
+          <HowItWorks />
         </div>
       </section>
 
@@ -232,86 +219,9 @@ function Hero() {
           </div>
           <p className="hero-note">The workspace is local to your machine — `meshly dev` serves it at localhost:3400.</p>
         </div>
-        <HeroWindow />
+        <HeroConsole />
       </div>
     </section>
-  )
-}
-
-function HeroWindow() {
-  return (
-    <div className="window hero-window">
-      <div className="window-bar">
-        <div className="dots">
-          <span />
-          <span />
-          <span />
-        </div>
-        <span className="window-title">Workers › invoice-reconciler › Run</span>
-      </div>
-      <div className="window-body">
-        <div className="hero-window-head">
-          <div>
-            <div className="mono" style={{ fontSize: 15 }}>
-              run_mty1a8zl_ri7a
-            </div>
-            <div className="faint" style={{ fontSize: 12 }}>
-              Reconcile invoice 4421
-            </div>
-          </div>
-          <span className="pill running">
-            <span className="dot run pulse" /> running
-          </span>
-        </div>
-        <ExecutionGraph compact />
-        <div className="hero-window-caption muted">Using browser environment…</div>
-        <div className="workspace-envs">
-          <div className="workspace-env on">
-            <span className="workspace-env-name">Browser</span>
-            <span className="workspace-env-state run">Active</span>
-          </div>
-          <div className="workspace-env">
-            <span className="workspace-env-name">Sandbox</span>
-            <span className="workspace-env-state faint">Waiting</span>
-          </div>
-          <div className="workspace-env">
-            <span className="workspace-env-name">Desktop</span>
-            <span className="workspace-env-state faint">Waiting</span>
-          </div>
-        </div>
-        <div className="workspace-log mono">
-          <div>
-            <span className="faint">[12:28:21]</span> Agent: OpenAI
-          </div>
-          <div>
-            <span className="faint">[12:28:22]</span> Action: Navigate to ERP
-          </div>
-          <div>
-            <span className="faint">[12:28:24]</span> Observation: Page loaded
-          </div>
-          <div>
-            <span className="faint">[12:28:24]</span> Next: Run reconciliation script…
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function PipelineNode({ label, sub, accent }: { label: string; sub: string; accent?: boolean }) {
-  return (
-    <div className={`pipeline-node panel ${accent ? "accent" : ""}`}>
-      <div className="pipeline-node-label">{label}</div>
-      <div className="pipeline-node-sub muted">{sub}</div>
-    </div>
-  )
-}
-
-function PipelineArrow() {
-  return (
-    <div className="pipeline-arrow" aria-hidden>
-      →
-    </div>
   )
 }
 
