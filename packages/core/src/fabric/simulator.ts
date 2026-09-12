@@ -57,7 +57,7 @@ export class SimulatorExecutionFabric implements ExecutionFabric {
     const id = `sim_browser_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
     let html = `<html><head><title>Example Domain</title></head><body><h1>Example Domain</h1><div id="state">LOADED</div></body></html>`
     let currentUrl = "https://example.com/"
-    const mockBrowser = {
+    const mockBrowser: any = {
       id,
       options,
       newPage: async () => {

@@ -88,12 +88,27 @@ export type { MeshlyConfig, WorkflowStep, WorkflowDef } from "./runtime.js"
 export { executeWorker, contractFor } from "./execution/execute.js"
 export type { ExecuteWorkerOptions } from "./execution/execute.js"
 export { resolveLimits } from "./execution/limits.js"
-export { dispatchTool, TOOL_CATALOG, environmentForTool } from "./execution/tools.js"
+export { dispatchTool, TOOL_CATALOG, environmentForTool, isEnvironmentGone, isUncertainSideEffect } from "./execution/tools.js"
 export type { ToolDispatchResult, ToolDispatchRequest } from "./execution/tools.js"
 export { resolveProgram, inferWorkerKind, reconciliationProgram } from "./execution/recipes.js"
+export type { ExecuteScenario } from "./execution/recipes.js"
 export { AmbiguousTimeoutError } from "./execution/timeout.js"
 export { persistRuntime, restoreRuntime } from "./persist/hydrate.js"
 export { startMeshlyMcpServer, MESHLY_MCP_TOOLS } from "./mcp/server.js"
+
+export { MeshlyError, formatUserError, toMeshlyError, isRetryableAllocation } from "./errors.js"
+export type { MeshlyErrorCode } from "./errors.js"
+export {
+  explainDecision,
+  explainEnvironment,
+  formatDecision,
+  isUnknownStatus,
+  isBlockedStatus,
+  isCommittedStatus,
+  policyNameFor,
+  outcomeOf,
+} from "./explain/decision.js"
+export type { DecisionExplanation, ExplainableRun } from "./explain/decision.js"
 
 export { ProjectStore, environmentsFromRun } from "./persist/store.js"
 export type {

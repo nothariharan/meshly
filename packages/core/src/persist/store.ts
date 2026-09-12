@@ -6,6 +6,7 @@ import fs from "node:fs"
 import path from "node:path"
 import type { MeshlyEvent, RunStatus } from "../types.js"
 import type { RunInstance } from "../run/run.js"
+import { MeshlyError } from "../errors.js"
 
 const PROJECT_DIRS = [
   "workers",
@@ -157,7 +158,13 @@ export class ProjectStore {
 
   loadConfig(): MeshlyProjectConfig {
     if (!this.exists()) {
-      throw new Error("No Meshly project here. Run `meshly init` first.")
+      throw new MeshlyError({
+        code: "NO_PROJECT",
+        title: "No Meshly project in this directory.",
+        reason: "Meshly has not been initialized here.",
+        action: "Nothing was started.",
+        retry: "meshly init --api-key <your Solari key>",
+      })
     }
     return JSON.parse(fs.readFileSync(this.configPath, "utf8"))
   }

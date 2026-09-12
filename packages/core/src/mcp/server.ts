@@ -30,7 +30,7 @@ export const MESHLY_MCP_TOOLS = [
       type: "object",
       properties: {
         workerId: { type: "string" },
-        scenario: { type: "string", enum: ["default", "reality-divergence", "ambiguous-timeout"] },
+        scenario: { type: "string", enum: ["default", "reality-divergence", "ambiguous-timeout", "ambiguous-timeout-absent"] },
         kind: { type: "string" },
       },
       required: ["workerId"],

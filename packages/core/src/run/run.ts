@@ -14,6 +14,7 @@ import {
 } from "../types.js"
 import { EventStore } from "../events/events.js"
 import { WorkerInstance } from "../worker/worker.js"
+import { explainDecision } from "../explain/decision.js"
 
 export class RunInstance implements Run {
   public readonly runId: string
@@ -128,6 +129,26 @@ export class RunInstance implements Run {
 
   eventLog() {
     return this.eventStore.getRunTimeline(this.runId)
+  }
+
+  /** UNKNOWN is a first-class status. It is not FAILURE. */
+  get unknown(): boolean {
+    return this.status === "UNKNOWN" || this.status === "VERIFYING"
+  }
+
+  explain(extras?: { policy?: string; authority?: string }) {
+    return explainDecision(
+      {
+        runId: this.runId,
+        workerId: this.workerId,
+        kind: this.kind,
+        status: this.status,
+        error: this.error,
+        steps: this.steps,
+        events: this.eventLog(),
+      },
+      extras,
+    )
   }
 
   async verify(): Promise<{ matched: boolean; error?: string }> {

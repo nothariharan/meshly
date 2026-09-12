@@ -2,13 +2,14 @@
  * Agent runtime: ActionRequest → Policy → ExecutionFabric → observation → verify → commit.
  * Agents never receive a Solari client.
  */
-import type { EnvironmentType, VerificationContract, WorkerLimits } from "../types.js"
+import type { ActionOutcome, EnvironmentType, VerificationContract, WorkerLimits } from "../types.js"
 import type { MeshlyRuntime } from "../runtime.js"
 import type { RunInstance } from "../run/run.js"
 import type { WorkerInstance } from "../worker/worker.js"
-import { dispatchTool, environmentForTool } from "./tools.js"
+import { dispatchTool, environmentForTool, isEnvironmentGone, isUncertainSideEffect } from "./tools.js"
 import { resolveProgram, type ExecuteScenario, type ProgramStep } from "./recipes.js"
 import { resolveLimits } from "./limits.js"
+import { MeshlyError, isRetryableAllocation, toMeshlyError } from "../errors.js"
 
 export interface ExecuteWorkerOptions {
   artifactDir?: string
@@ -44,8 +45,14 @@ export async function executeWorker(
   runtime.scheduler.claim(worker.id)
   runtime.scheduler.activate(worker)
   const run = existing || runtime.runs.create(worker)
-  run.kind = program.kind === "timeout" ? "operations" : program.kind
-  worker.kind = run.kind
+  // A scenario (e.g. ambiguous timeout) must not rename the worker's domain.
+  // The run records what ran; the worker keeps the kind it was created with.
+  if (program.kind === "timeout") {
+    run.kind = worker.kind || "operations"
+  } else {
+    run.kind = program.kind
+    worker.kind = program.kind
+  }
   worker.context.runId = run.runId
   worker.status = "RUNNING"
   worker.updatedAt = new Date()
@@ -62,7 +69,7 @@ export async function executeWorker(
   options.onProgress?.(run)
 
   const leases = new Map<EnvironmentType, string>()
-  collectExistingLeases(runtime, worker, leases)
+  collectExistingLeases(runtime, worker, run, leases)
   const startIndex = existing ? run.steps.filter((s) => s.status === "committed").length : 0
 
   try {
@@ -91,7 +98,15 @@ export async function executeWorker(
     options.onProgress?.(run)
     return run
   } catch (err: any) {
-    const message = err?.message || String(err)
+    const mapped = toMeshlyError(err, { runId: run.runId }) || err
+    const message = mapped instanceof MeshlyError ? mapped.format().trim() : mapped?.message || String(err)
+    if (isRetryableAllocation(err) || isRetryableAllocation(mapped)) {
+      worker.status = "WAITING"
+      run.status = "WAITING"
+      run.error = message
+      options.onProgress?.(run)
+      return run
+    }
     runtime.fail(worker.id, message)
     worker.status = "FAILED"
     run.fail(message)
@@ -171,15 +186,66 @@ export async function executeProgramStep(
   run.updateStepStatus(execStep.id, "executing")
   options.onProgress?.(run)
 
-  const dispatched = await dispatchTool({
+  const stepArgs = carryForwardArgs(step.args, run)
+
+  let dispatched = await dispatchTool({
     tool,
-    args: step.args,
+    args: stepArgs,
     env,
     artifactDir: options.artifactDir,
     runId: run.runId,
     timeoutMs: step.args.timeoutMs,
   })
 
+  const gone = dispatched.outcome === "FAILURE" && isEnvironmentGone(dispatched.observation?.error)
+  if (gone) {
+    runtime.broker.markLost(env.id, dispatched.observation?.error || "ENVIRONMENT LOST", { workerId: worker.id, runId: run.runId })
+    leases.delete(type)
+    if (isUncertainSideEffect(tool)) {
+      return independentVerifyUnknown(runtime, worker, run, execStep, step, env, {
+        ...dispatched.observation,
+        reason: dispatched.observation?.error || "ENVIRONMENT LOST",
+      }, options)
+    }
+    const replacement = await ensureEnvironment(runtime, worker, run, type, leases)
+    options.onProgress?.(run)
+    dispatched = await dispatchTool({
+      tool,
+      args: stepArgs,
+      env: replacement,
+      artifactDir: options.artifactDir,
+      runId: run.runId,
+      timeoutMs: step.args.timeoutMs,
+    })
+    if (dispatched.outcome === "FAILURE" && isEnvironmentGone(dispatched.observation?.error)) {
+      runtime.broker.markLost(replacement.id, dispatched.observation?.error || "ENVIRONMENT LOST", { workerId: worker.id, runId: run.runId })
+      run.updateStepStatus(execStep.id, "rejected", {
+        observation: dispatched.observation,
+        error: dispatched.observation?.error,
+      })
+      run.fail(dispatched.observation?.error || "ENVIRONMENT LOST")
+      worker.status = "FAILED"
+      options.onProgress?.(run)
+      return "halt"
+    }
+    return finishDispatchedStep(runtime, worker, run, execStep, step, replacement, dispatched, options)
+  }
+
+  return finishDispatchedStep(runtime, worker, run, execStep, step, env, dispatched, options)
+}
+
+async function finishDispatchedStep(
+  runtime: MeshlyRuntime,
+  worker: WorkerInstance,
+  run: RunInstance,
+  execStep: { id: string },
+  step: ProgramStep,
+  env: { id: string },
+  dispatched: { outcome: ActionOutcome; claimedSuccess: boolean; observation: Record<string, any> },
+  options: ExecuteWorkerOptions,
+): Promise<"continue" | "halt"> {
+  const type = step.environment
+  const tool = step.tool
   const cost = costFor(type)
   if (!worker.deductSpend(cost)) {
     haltOnLimit(
@@ -321,7 +387,27 @@ async function independentVerifyUnknown(
     runId: run.runId,
   })
 
-  const world = { ...timeoutObservation, ...fresh.observation, result: undefined }
+  const world: Record<string, any> = { ...timeoutObservation, ...fresh.observation, result: undefined }
+
+  runtime.events.emit("observation.captured", {
+    workerId: worker.id,
+    runId: run.runId,
+    environmentId: env.id,
+    data: { reason: "independent world-state read", keys: Object.keys(fresh.observation || {}) },
+  })
+  runtime.events.emit("observation.recorded", {
+    workerId: worker.id,
+    runId: run.runId,
+    environmentId: env.id,
+    data: {
+      reason: "independent world-state read",
+      type: env.type || step.environment,
+      erp_status: world.erp_status,
+      content: world.content,
+      payment_status: world.payment_status,
+      title: world.title,
+    },
+  })
   let matched = true
   let mismatch = ""
   for (const cond of step.contract.postconditions) {
@@ -338,6 +424,12 @@ async function independentVerifyUnknown(
   }
 
   if (matched) {
+    runtime.events.emit("commit.committed", {
+      workerId: worker.id,
+      runId: run.runId,
+      environmentId: env.id,
+      data: { type: env.type || step.environment, independent: true },
+    })
     run.updateStepStatus(execStep.id, "committed", {
       observation: world,
       agentClaim: "UNKNOWN",
@@ -360,6 +452,15 @@ async function independentVerifyUnknown(
     run.status = "UNKNOWN"
     worker.status = "WAITING"
     run.error = mismatch || "UNKNOWN: side effect absent; safe retry permitted"
+    runtime.events.emit("run.unknown", {
+      workerId: worker.id,
+      runId: run.runId,
+      data: {
+        reason: mismatch || "Side effect absent — retry is allowed but not automatic",
+        retry: false,
+        safeToRetry: true,
+      },
+    })
   }
   options.onProgress?.(run)
   return "halt"
@@ -368,6 +469,7 @@ async function independentVerifyUnknown(
 function collectExistingLeases(
   runtime: MeshlyRuntime,
   worker: WorkerInstance,
+  run: RunInstance,
   leases: Map<EnvironmentType, string>,
 ): void {
   for (const env of runtime.broker.list()) {
@@ -375,6 +477,7 @@ function collectExistingLeases(
     if (env.status === "LOST" || env.status === "TERMINATED" || env.status === "TERMINATING") continue
     if (!env.handle || !env.currentLeaseId) continue
     if (!runtime.broker.getLease(env.currentLeaseId)) continue
+    if (run.environments.length && !run.environments.includes(env.id)) continue
     leases.set(env.type, env.currentLeaseId)
   }
 }
@@ -422,6 +525,28 @@ function haltOnLimit(
   return run
 }
 
+/**
+ * Real carry-forward: later steps consume the observations of earlier environments.
+ * A sandbox reconciliation must use the payment record actually read from the browser,
+ * not a hard-coded fixture.
+ */
+function carryForwardArgs(args: Record<string, any>, run: RunInstance): Record<string, any> {
+  if (!args?.carryForwardFrom || !Array.isArray(args.prepare)) return args
+  const type = String(args.carryForwardFrom)
+  const source = [...run.steps]
+    .reverse()
+    .find((s) => s.observation?.type === type && typeof s.observation?.payments_record === "object")
+  const payments = source?.observation?.payments_record
+  if (!payments) return args
+  const prepare = args.prepare.map((file: { path: string; content: string }) => {
+    if (file?.path === "/tmp/payments.json") {
+      return { ...file, content: JSON.stringify(payments) }
+    }
+    return file
+  })
+  return { ...args, prepare }
+}
+
 async function ensureEnvironment(
   runtime: MeshlyRuntime,
   worker: WorkerInstance,
@@ -433,22 +558,35 @@ async function ensureEnvironment(
   if (existingLeaseId) {
     const lease = runtime.broker.getLease(existingLeaseId)
     const env = lease ? runtime.broker.inspect(lease.environmentId) : undefined
-    if (env?.handle) return env
+    if (env?.handle && env.status !== "LOST" && env.status !== "TERMINATED") return env
+    leases.delete(type)
   }
 
   const limits = resolveLimits(worker)
   const liveTypes = new Set(leases.keys())
   if (!liveTypes.has(type) && liveTypes.size >= limits.maxEnvironments) {
-    throw new Error(`Environment cap reached: ${liveTypes.size} / ${limits.maxEnvironments}`)
+    throw new MeshlyError({
+      code: "LIMIT_EXCEEDED",
+      title: "Worker hit an operational limit.",
+      reason: `Environment cap reached: ${liveTypes.size} / ${limits.maxEnvironments}`,
+      runId: run.runId,
+      action: "Execution stopped. Recorded work was kept.",
+      retryable: false,
+    })
   }
 
-  const lease = await runtime.broker.acquire({
-    workerId: worker.id,
-    type,
-    capabilities: [type],
-    authority: worker.authority,
-    budget: Math.max(0.01, worker.budget.maxSpend - worker.budget.spent),
-  })
+  let lease
+  try {
+    lease = await runtime.broker.acquire({
+      workerId: worker.id,
+      type,
+      capabilities: [type],
+      authority: worker.authority,
+      budget: Math.max(0.01, worker.budget.maxSpend - worker.budget.spent),
+    })
+  } catch (err) {
+    throw toMeshlyError(err, { runId: run.runId, environment: type }) || err
+  }
   leases.set(type, lease.leaseId)
   worker.environmentLease = lease
   run.recordEnvironment(lease.environmentId)

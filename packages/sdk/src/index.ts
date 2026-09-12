@@ -177,7 +177,7 @@ export class Meshly {
     options?: {
       artifactDir?: string
       destroyAfter?: boolean
-      scenario?: "default" | "reality-divergence" | "ambiguous-timeout"
+      scenario?: import("@meshly/core").ExecuteScenario
       kind?: string
       signal?: AbortSignal
       onProgress?: (run: RunInstance) => void
@@ -189,7 +189,7 @@ export class Meshly {
   async resume(runId: string, options?: {
     artifactDir?: string
     destroyAfter?: boolean
-    scenario?: "default" | "reality-divergence" | "ambiguous-timeout"
+    scenario?: import("@meshly/core").ExecuteScenario
     kind?: string
     signal?: AbortSignal
     onProgress?: (run: RunInstance) => void

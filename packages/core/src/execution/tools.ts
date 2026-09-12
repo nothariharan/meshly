@@ -61,6 +61,24 @@ export function environmentForTool(tool: string): EnvironmentType | undefined {
   return cap
 }
 
+export function isEnvironmentGone(error?: string): boolean {
+  if (!error) return false
+  const m = error.toLowerCase()
+  if (m.includes("environment lost") || m.includes("no environment handle")) return true
+  if (m.includes("websocket") || m.includes("network error") || m.includes("econnreset")) return true
+  if (m.includes("disconnected") || m.includes("session closed") || m.includes("browsersgone") || m.includes("browser gone")) return true
+  if (m.includes("control channel") || m.includes("channel closed")) return true
+  if (m.includes("has been killed") || m.includes("not running")) return true
+  if (m.includes("not found") && (m.includes("sandbox") || m.includes("desktop") || m.includes("session") || m.includes("browser"))) {
+    return true
+  }
+  return false
+}
+
+export function isUncertainSideEffect(tool: string): boolean {
+  return tool === "desktop_write" || tool === "sandbox_write"
+}
+
 export async function dispatchTool(req: ToolDispatchRequest): Promise<ToolDispatchResult> {
   const spec = TOOL_CATALOG[req.tool]
   if (!spec) {
@@ -68,6 +86,14 @@ export async function dispatchTool(req: ToolDispatchRequest): Promise<ToolDispat
       outcome: "FAILURE",
       claimedSuccess: false,
       observation: { error: `Unknown tool '${req.tool}'` },
+    }
+  }
+
+  if (req.env?.status === "LOST") {
+    return {
+      outcome: "FAILURE",
+      claimedSuccess: false,
+      observation: { error: "ENVIRONMENT LOST", tool: req.tool },
     }
   }
 
@@ -179,6 +205,13 @@ async function browserAction(tool: string, handle: any, req: ToolDispatchRequest
     findings: extractById(html, "findings") ? "present" : extractTitle(html),
     service: extractById(html, "service"),
     health: extractById(html, "health"),
+    // Payload carried forward so later environments reconcile actual browser state,
+    // not a hard-coded ledger. This is the real payment record read from the page.
+    payments_record: {
+      invoice: payments.invoiceId,
+      status: payments.payment_status,
+      amount: payments.amount,
+    },
   }
 
   if (page.screenshot) {
@@ -258,7 +291,7 @@ async function desktopAction(tool: string, handle: any, req: ToolDispatchRequest
   if (tool === "desktop_write") {
     const filePath = args.path || "/tmp/erp_status"
     const content = args.content ?? args.text ?? "POSTED"
-    await writeFile(handle, filePath, content)
+    if (!args.dropSideEffect) await writeFile(handle, filePath, content)
   }
 
   const readPath = args.path || "/tmp/erp_status"

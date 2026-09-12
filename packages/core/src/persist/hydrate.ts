@@ -173,8 +173,16 @@ export async function restoreRuntime(runtime: MeshlyRuntime, store: ProjectStore
 
   let reconnected = 0
   let lost = 0
+  const recoverable = new Set(
+    store
+      .listRuns()
+      .filter((r) => r.status === "PAUSED" || r.status === "RUNNING" || r.status === "UNKNOWN" || r.status === "VERIFYING")
+      .flatMap((r) => (r.environments || []).map((e) => e.id)),
+  )
   for (const stored of store.listEnvironments()) {
     if (!stored.fabricId) continue
+    if (stored.status === "TERMINATED") continue
+    if (!recoverable.has(stored.id)) continue
     const env: ExecutionEnvironment = {
       id: stored.id,
       type: stored.type as any,
@@ -189,12 +197,29 @@ export async function restoreRuntime(runtime: MeshlyRuntime, store: ProjectStore
       currentLeaseId: stored.leaseId,
       lastActiveAt: new Date(stored.lastActivityAt),
     }
-    runtime.broker.adopt(env)
+    const lease = stored.leaseId
+      ? {
+          leaseId: stored.leaseId,
+          workerId: stored.workerId || "",
+          environmentId: stored.id,
+          createdAt: new Date(stored.createdAt),
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+          capabilities: [stored.type as any],
+          budget: 1,
+          authority: {
+            tools: ["*"],
+            capabilities: [stored.type as any],
+            expiresAt: new Date(Date.now() + 60 * 60_000),
+          },
+          status: "ACTIVE" as const,
+        }
+      : undefined
+    runtime.broker.adopt(env, lease)
     try {
       await runtime.broker.reconnect(env.id)
       reconnected += 1
     } catch {
-      env.status = "LOST"
+      runtime.broker.markLost(env.id, "Reconnect failed")
       lost += 1
     }
   }

@@ -263,6 +263,14 @@ function wrapSolariError(err: unknown, prefix: string): SolariFabricError {
       { code: "StealthPoolEmpty", status: 503, retryable: false, cause: err },
     )
   }
+  if (code === "Unauthorized" || anyErr?.status === 401 || /invalid api key|unauthorized/i.test(message)) {
+    return new SolariFabricError(`${prefix}: Solari rejected the API key.`, {
+      code: "Unauthorized",
+      status: 401,
+      retryable: false,
+      cause: err,
+    })
+  }
   if (code === "InsufficientCredit" || anyErr?.status === 402) {
     return new SolariFabricError(`${prefix}: insufficient Solari credit.`, {
       code: code || "InsufficientCredit",

@@ -5,7 +5,7 @@
 import type { AgentActionRequest, EnvironmentType, VerificationContract, WorkerKind } from "../types.js"
 import { CODING_APP_JS, INVOICE_ID, PAYMENTS_HTML, RECONCILE_PY, RESEARCH_HTML, STATUS_HTML } from "./world.js"
 
-export type ExecuteScenario = "default" | "reality-divergence" | "ambiguous-timeout"
+export type ExecuteScenario = "default" | "reality-divergence" | "ambiguous-timeout" | "ambiguous-timeout-absent"
 
 export interface ProgramStep {
   intent: string
@@ -45,6 +45,7 @@ export function inferWorkerKind(task: string, kind?: string): WorkerKind | "time
 export function resolveProgram(input: ResolveProgramInput): WorkerProgram {
   const scenario = input.scenario || "default"
   if (scenario === "ambiguous-timeout") return timeoutProgram()
+  if (scenario === "ambiguous-timeout-absent") return timeoutAbsentProgram()
   if (scenario === "reality-divergence") return reconciliationProgram(true)
 
   const kind = inferWorkerKind(input.task, input.kind)
@@ -129,6 +130,7 @@ export function reconciliationProgram(diverge: boolean): WorkerProgram {
         tool: "sandbox_exec",
         environment: "sandbox",
         args: {
+          carryForwardFrom: "browser",
           prepare: [
             { path: "/tmp/payments.json", content: JSON.stringify({ invoice: INVOICE_ID, status: "PAID", amount: "1200.00" }) },
             { path: "/tmp/ledger.json", content: JSON.stringify({ invoice: INVOICE_ID, status: "UNPAID", amount: "1200.00" }) },
@@ -304,7 +306,32 @@ export function timeoutProgram(): WorkerProgram {
         intent: "Dispatch a desktop side effect whose result may never return",
         tool: "desktop_write",
         environment: "desktop",
-        args: { path: "/tmp/erp_status", content: "POSTED", dropResult: true },
+        args: { path: "/tmp/erp_status", content: "POSTED", timeoutMs: 25, dropResult: true },
+        contract: {
+          intent: "Independent verification of the desktop side effect",
+          preconditions: [],
+          postconditions: [{ target: "desktop", type: "status_equals", query: "erp_status", expected: "POSTED" }],
+        },
+      },
+    ],
+  }
+}
+
+/**
+ * Negative control for the UNKNOWN experiment: the side effect is never dispatched,
+ * the result is lost, and independent verification must find the world unchanged.
+ * Contract expects POSTED — the world is untouched, so verification fails and Meshly
+ * reports UNKNOWN with "safe to retry", never an automatic retry.
+ */
+export function timeoutAbsentProgram(): WorkerProgram {
+  return {
+    kind: "timeout",
+    steps: [
+      {
+        intent: "Dispatch a desktop side effect whose result may never return",
+        tool: "desktop_write",
+        environment: "desktop",
+        args: { path: "/tmp/erp_status", content: "POSTED", timeoutMs: 25, dropResult: true, dropSideEffect: true },
         contract: {
           intent: "Independent verification of the desktop side effect",
           preconditions: [],

@@ -51,7 +51,7 @@ export class EnvironmentBroker {
 
     // 1. Match affinity in idle warm pool
     for (const env of this.environments.values()) {
-      if (env.status === "IDLE" && env.type === req.type) {
+      if (env.status === "IDLE" && env.type === req.type && env.handle) {
         const profileMatch = !affinity.profile || env.profile === affinity.profile
         const filesMatch = !affinity.files || affinity.files.every((f) => env.loadedFiles.includes(f))
 
@@ -77,7 +77,7 @@ export class EnvironmentBroker {
 
     // 2. Reuse any idle environment of same type (re-profile)
     for (const env of this.environments.values()) {
-      if (env.status === "IDLE" && env.type === req.type && !affinity.profile) {
+      if (env.status === "IDLE" && env.type === req.type && env.handle && !affinity.profile) {
         env.status = "BUSY"
         env.owner = req.workerId
         env.lastActiveAt = new Date()
@@ -236,6 +236,27 @@ export class EnvironmentBroker {
 
   inspect(environmentId: string): ExecutionEnvironment | undefined {
     return this.environments.get(environmentId)
+  }
+
+  markLost(environmentId: string, reason = "Environment unreachable", meta: { workerId?: string; runId?: string } = {}): ExecutionEnvironment | undefined {
+    const env = this.environments.get(environmentId)
+    if (!env) {
+      this.events.emit("environment.lost", { environmentId, workerId: meta.workerId, runId: meta.runId, data: { reason } })
+      return undefined
+    }
+    env.status = "LOST"
+    env.handle = undefined
+    if (env.currentLeaseId) {
+      const lease = this.leases.get(env.currentLeaseId)
+      if (lease && lease.status === "ACTIVE") lease.status = "EXPIRED"
+    }
+    this.events.emit("environment.lost", {
+      environmentId: env.id,
+      workerId: meta.workerId || env.owner,
+      runId: meta.runId,
+      data: { type: env.type, fabricId: env.fabricId, reason },
+    })
+    return env
   }
 
   async destroy(environmentId: string): Promise<void> {

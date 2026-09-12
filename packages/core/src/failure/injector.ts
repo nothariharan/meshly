@@ -53,15 +53,7 @@ export class FailureInjector {
   }
 
   async injectEnvironmentLoss(environmentId: string): Promise<InjectedFailureResult> {
-    const env = this.broker.inspect(environmentId)
-    if (env) {
-      env.status = "LOST"
-    }
-
-    this.events.emit("environment.lost", {
-      environmentId,
-      data: { simulated: true, reason: "Injected network timeout / hypervisor drop" },
-    })
+    this.broker.markLost(environmentId, "Injected network timeout / hypervisor drop")
 
     return {
       scenario: "environment-loss",

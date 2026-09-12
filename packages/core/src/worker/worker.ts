@@ -206,7 +206,7 @@ export class WorkerInstance implements IWorker {
   async run(options?: {
     artifactDir?: string
     destroyAfter?: boolean
-    scenario?: "default" | "reality-divergence" | "ambiguous-timeout"
+    scenario?: import("../execution/recipes.js").ExecuteScenario
     kind?: string
     signal?: AbortSignal
     onProgress?: (run: import("../run/run.js").RunInstance) => void
