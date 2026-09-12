@@ -16,6 +16,8 @@
     "build": "node scripts/build.mjs",
     "pack:audit": "node scripts/pack-audit.mjs",
     "pack:local": "node scripts/pack-local.mjs",
+    "site": "npm --workspace @meshly/site run dev",
+    "site:build": "npm --workspace @meshly/site run build",
     "dry-test": "node scripts/dry-test.mjs",
     "meshly": "tsx packages/cli/src/index.ts",
     "workflow:reconciliation": "tsx workflows/reconciliation/index.ts",
