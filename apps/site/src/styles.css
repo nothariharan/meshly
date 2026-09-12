@@ -428,3 +428,136 @@ section { border-top: 1px solid var(--line); }
 .agents-item:hover { opacity: 1; }
 .agents-icon { height: 20px; width: auto; display: block; }
 .agents-label { font-size: 15px; color: var(--muted); font-weight: 500; letter-spacing: -0.01em; }
+
+/* ---------- architecture diagram ---------- */
+
+.arch2-head { text-align: center; max-width: 760px; margin: 0 auto 40px; }
+.arch2-head h2 { margin: 18px 0 20px; }
+.arch2-head .lead { margin: 0 auto; }
+.arch2-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 28px; }
+.arch2-chip {
+  display: inline-flex; align-items: center; gap: 9px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 9px 16px;
+  color: var(--muted); font-size: 14px; background: var(--panel);
+}
+
+.arch2-pipeline {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px; border-radius: 999px; margin-bottom: 8px; overflow: hidden;
+}
+.arch2-stage { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.arch2-stage:last-child { flex: 0 0 auto; }
+.arch2-stage-dot {
+  width: 22px; height: 22px; border-radius: 999px; border: 1px solid var(--line-2);
+  display: grid; place-items: center; font-size: 11px; color: var(--faint); flex: 0 0 auto;
+  background: var(--bg-3);
+}
+.arch2-stage.done .arch2-stage-dot { border-color: #1f4a37; color: var(--verified); background: var(--verified-dim); }
+.arch2-stage.active .arch2-stage-dot { border-color: var(--verified); background: transparent; }
+.arch2-ring { width: 9px; height: 9px; border-radius: 999px; border: 2.5px solid var(--verified); }
+.arch2-stage-label { font-size: 13px; color: var(--faint); white-space: nowrap; }
+.arch2-stage.done .arch2-stage-label { color: var(--text); }
+.arch2-stage.active .arch2-stage-label { color: var(--text); font-weight: 550; }
+.arch2-stage-line { flex: 1; height: 1px; background: var(--line); margin: 0 10px; min-width: 20px; }
+.arch2-stage.done .arch2-stage-line { background: #1f4a37; }
+
+.arch2-diagram { margin-top: 30px; }
+.arch2-worker {
+  max-width: 520px; margin: 0 auto; padding: 18px 20px; background: var(--bg-2);
+  border-color: var(--line-2);
+}
+.arch2-worker-top { display: flex; align-items: center; gap: 13px; }
+.arch2-worker-glyph {
+  width: 40px; height: 40px; border-radius: 11px; border: 1px solid var(--line-2);
+  background: #000; display: grid; place-items: center; overflow: hidden; flex: 0 0 auto;
+}
+.arch2-worker-glyph img { width: 34px; height: 34px; object-fit: contain; }
+.arch2-worker-title { flex: 1; display: flex; flex-direction: column; }
+.arch2-worker-name { font-size: 15px; }
+.arch2-worker-task { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.arch2-worker-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.arch2-meta { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+.arch2-meta b { color: var(--text); font-weight: 500; }
+
+.arch2-connectors { display: block; width: 100%; height: 78px; margin: 2px 0 -6px; }
+.arch2-connectors path { fill: none; stroke: var(--line-2); stroke-width: 1.3; }
+
+.arch2-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.arch2-card { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.arch2-card.active { border-color: #1f4a37; box-shadow: 0 0 0 1px #143528; }
+.arch2-card-head { display: flex; align-items: center; gap: 11px; }
+.arch2-card-icon { color: var(--muted); display: grid; place-items: center; flex: 0 0 auto; }
+.arch2-card.active .arch2-card-icon { color: var(--verified); }
+.arch2-card-title { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.arch2-card-name { font-size: 14px; font-weight: 550; }
+.arch2-card-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+.arch2-browser { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
+.arch2-browser-bar { display: flex; align-items: center; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.arch2-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--line-2); }
+.arch2-url { font-size: 10.5px; color: var(--faint); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arch2-invoice { padding: 14px; }
+.arch2-invoice-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.arch2-invoice-id { font-size: 14px; font-weight: 600; }
+.arch2-invoice-rows { margin: 0; display: flex; flex-direction: column; gap: 7px; }
+.arch2-invoice-rows > div { display: flex; justify-content: space-between; font-size: 12.5px; }
+.arch2-invoice-rows dt { color: var(--muted); }
+.arch2-invoice-rows dd { margin: 0; }
+.arch2-invoice-rows dd.ok { color: var(--verified); }
+
+.arch2-code { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden; font-size: 11.5px; }
+.arch2-code-path { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--faint); font-size: 11px; }
+.arch2-code-line { display: flex; gap: 10px; padding: 4px 10px; }
+.arch2-ln { color: var(--faint); width: 14px; text-align: right; flex: 0 0 auto; }
+.arch2-code-text { color: #b7c4d0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+
+.arch2-erp { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden; display: grid; grid-template-columns: 84px 1fr; min-height: 176px; }
+.arch2-erp-menu { border-right: 1px solid var(--line); padding: 8px 0; background: var(--bg-2); }
+.arch2-erp-item { font-size: 11.5px; color: var(--muted); padding: 6px 12px; }
+.arch2-erp-item.on { color: var(--text); border-left: 2px solid var(--verified); background: var(--bg-3); }
+.arch2-erp-form { padding: 14px; }
+.arch2-erp-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.arch2-erp-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 7px; }
+.arch2-erp-row span { color: var(--muted); }
+.arch2-erp-row b.ok { color: var(--verified); font-weight: 500; }
+.arch2-erp-btn { margin-top: 12px; width: 100%; height: 30px; border-radius: 6px; border: 0; background: var(--text); color: #0a0a0a; font-size: 12.5px; font-weight: 550; }
+
+.arch2-verify-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.arch2-verify-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.arch2-verify-box { width: 15px; height: 15px; border-radius: 999px; border: 1.5px solid var(--line-2); flex: 0 0 auto; }
+.arch2-verify-foot {
+  margin-top: auto; border: 1px solid var(--line); border-radius: 7px; padding: 9px;
+  text-align: center; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint);
+}
+
+.arch2-events { margin-top: 20px; }
+.arch2-events-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.arch2-events-title { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; }
+.arch2-streaming { font-size: 11.5px; color: var(--faint); }
+.arch2-events-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+.arch2-event { display: flex; gap: 12px; flex-wrap: wrap; }
+.arch2-event-t { color: var(--faint); }
+.arch2-event-tag { color: var(--muted); }
+.arch2-event-text { color: #c7ccd1; }
+
+.arch2-powered { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+.arch2-powered-left { display: flex; flex-direction: column; gap: 12px; }
+.arch2-powered-label { font-size: 12px; color: var(--muted); }
+.arch2-solari { display: flex; align-items: center; gap: 12px; }
+.arch2-solari-mark { width: 34px; height: 34px; border-radius: 50%; filter: invert(1); display: block; }
+.arch2-solari-word { font-size: 18px; font-weight: 600; letter-spacing: 0.32em; color: var(--text); }
+.arch2-powered-right { text-align: right; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 1080px) {
+  .arch2-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .arch2-connectors { display: none; }
+}
+@media (max-width: 720px) {
+  .arch2-pipeline { flex-wrap: wrap; gap: 10px; border-radius: 14px; }
+  .arch2-stage-line { display: none; }
+  .arch2-cards { grid-template-columns: 1fr; }
+  .arch2-powered { flex-direction: column; align-items: flex-start; }
+  .arch2-powered-right { text-align: left; }
+}
+
+section[id] { scroll-margin-top: 76px; }

@@ -7,6 +7,7 @@ import { UnknownRecovery } from "./components/UnknownRecovery"
 import { WorkerWorkspace } from "./components/WorkerWorkspace"
 import { InstallTerminal } from "./components/InstallTerminal"
 import { WorksWithAgents } from "./components/WorksWithAgents"
+import { ArchitectureDiagram } from "./components/ArchitectureDiagram"
 
 const GH = "https://github.com/nothariharan/meshly"
 const WORKSPACE = "http://localhost:3400"
@@ -135,25 +136,7 @@ export function App() {
 
       <section id="architecture">
         <div className="wrap section-pad">
-          <div className="section-head">
-            <div className="eyebrow">Architecture</div>
-            <h2>Meshly controls how autonomous work executes.</h2>
-            <p className="lead">Solari provides where it executes.</p>
-          </div>
-          <div className="arch">
-            <ArchLayer
-              title="Agent"
-              items={["Claude", "GPT", "MCP", "Script"]}
-            />
-            <ArchArrow />
-            <ArchLayer
-              title="Meshly"
-              items={["Worker", "Run", "Policy", "Authority", "Verification", "Recovery"]}
-              accent
-            />
-            <ArchArrow />
-            <ArchLayer title="Solari" items={["Browser", "Sandbox", "Desktop"]} />
-          </div>
+          <ArchitectureDiagram />
         </div>
       </section>
 
@@ -328,29 +311,6 @@ function PipelineArrow() {
   return (
     <div className="pipeline-arrow" aria-hidden>
       →
-    </div>
-  )
-}
-
-function ArchLayer({ title, items, accent }: { title: string; items: string[]; accent?: boolean }) {
-  return (
-    <div className={`arch-layer panel ${accent ? "accent" : ""}`}>
-      <div className="arch-title">{title}</div>
-      <div className="arch-items">
-        {items.map((item) => (
-          <span className="arch-item mono" key={item}>
-            {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ArchArrow() {
-  return (
-    <div className="arch-arrow" aria-hidden>
-      ↓
     </div>
   )
 }
