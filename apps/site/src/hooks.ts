@@ -80,3 +80,53 @@ export function useTypewriter(text: string, active: boolean, cps = 46) {
 
   return out
 }
+
+/**
+ * Pinned scroll progress for scrollytelling.
+ * Attach `wrapRef` to a tall container and `stickRef` to its sticky child.
+ * Returns progress 0..1 as the sticky child travels through the wrapper, so the
+ * stage advances while the diagram stays on screen. Sets 1 under reduced motion
+ * or when the layout is not tall enough to pin.
+ */
+export function usePinProgress<W extends HTMLElement, S extends HTMLElement>(stickyTop = 84) {
+  const wrapRef = useRef<W | null>(null)
+  const stickRef = useRef<S | null>(null)
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const reduce =
+      typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    if (reduce) {
+      setProgress(1)
+      return
+    }
+    let raf = 0
+    const compute = () => {
+      const wrap = wrapRef.current
+      const stick = stickRef.current
+      if (!wrap || !stick) return
+      const travel = wrap.offsetHeight - stick.offsetHeight
+      if (travel <= 40) {
+        setProgress(1)
+        return
+      }
+      const top = wrap.getBoundingClientRect().top
+      const p = Math.min(1, Math.max(0, (stickyTop - top) / travel))
+      setProgress(p)
+    }
+    const onScroll = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(compute)
+    }
+    compute()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    window.addEventListener("resize", onScroll)
+    return () => {
+      window.removeEventListener("scroll", onScroll)
+      window.removeEventListener("resize", onScroll)
+      cancelAnimationFrame(raf)
+    }
+  }, [stickyTop])
+
+  return { wrapRef, stickRef, progress }
+}

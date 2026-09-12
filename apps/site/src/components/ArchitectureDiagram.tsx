@@ -1,4 +1,5 @@
 import { Browser, CheckCircle, Cube, Desktop, Database, Lightning, Shield } from "@phosphor-icons/react"
+import { usePinProgress } from "../hooks"
 
 const CHIPS = [
   { label: "Policy enforced", Icon: Shield },
@@ -8,7 +9,6 @@ const CHIPS = [
 ]
 
 const PIPELINE = ["Intent", "Authorize", "Browser", "Sandbox", "Desktop", "Verify", "Commit"]
-const PIPELINE_ACTIVE = 2
 
 const EVENTS = [
   { t: "12:03:14", tag: "worker", text: "Starting run run_mty1a8zl_ri7a" },
@@ -16,14 +16,35 @@ const EVENTS = [
   { t: "12:03:17", tag: "browser", text: "Launching browser environment…" },
   { t: "12:03:19", tag: "browser", text: "Navigating to payments.example.com" },
   { t: "12:03:21", tag: "browser", text: "Payment data extracted: Invoice #4421 (PAID)" },
+  { t: "12:03:23", tag: "sandbox", text: "Reconciling ledger… payment = PAID, ledger = UNPAID" },
+  { t: "12:03:26", tag: "desktop", text: "Posting to ERP · erp_status = POSTED" },
+  { t: "12:03:28", tag: "verify", text: "Independent read · world state matched · committed" },
 ]
 
+const VERIFY_ITEMS = ["Agent claim", "Tool execution", "World state", "Independent check"]
+
+type CardState = "waiting" | "active" | "done"
+const pillFor = (state: CardState, pendingLabel = "waiting") =>
+  state === "active" ? "active" : state === "done" ? "done" : pendingLabel
+
 /**
- * The architecture diagram. One worker, every environment it needs.
- * Values mirror the canonical run (invoice 4421, finance.reconcile,
- * run_mty1a8zl_ri7a) so the diagram stays honest to the product.
+ * Scroll-driven architecture diagram. One worker, every environment it needs.
+ * The active stage advances Browser → Sandbox → Desktop → Verify → Commit as
+ * the user scrolls, then settles. Values mirror the canonical run.
  */
 export function ArchitectureDiagram() {
+  const { wrapRef, stickRef, progress } = usePinProgress<HTMLDivElement, HTMLDivElement>()
+  const stage = Math.min(4, Math.floor(progress * 5))
+  const pipelineActive = stage >= 4 ? PIPELINE.length : 2 + stage
+
+  const cardState = (index: number): CardState => (stage === index ? "active" : stage > index ? "done" : "waiting")
+  const browser = cardState(0)
+  const sandbox = cardState(1)
+  const desktop = cardState(2)
+  const verify = cardState(3)
+  const finished = stage >= 4
+  const revealEvents = Math.min(EVENTS.length, stage + 3)
+
   return (
     <div className="arch2">
       <header className="arch2-head">
@@ -43,15 +64,17 @@ export function ArchitectureDiagram() {
         </div>
       </header>
 
-      <div className="arch2-pipeline window">
-        {PIPELINE.map((stage, i) => {
-          const state = i < PIPELINE_ACTIVE ? "done" : i === PIPELINE_ACTIVE ? "active" : "todo"
+      <div className="arch2-scroll" ref={wrapRef}>
+        <div className="arch2-sticky" ref={stickRef}>
+          <div className="arch2-pipeline window">
+        {PIPELINE.map((name, i) => {
+          const state = i < pipelineActive ? "done" : i === pipelineActive ? "active" : "todo"
           return (
-            <div className={`arch2-stage ${state}`} key={stage}>
+            <div className={`arch2-stage ${state}`} key={name}>
               <span className="arch2-stage-dot">
                 {state === "done" ? "✓" : state === "active" ? <span className="arch2-ring" /> : ""}
               </span>
-              <span className="arch2-stage-label">{stage}</span>
+              <span className="arch2-stage-label">{name}</span>
               {i < PIPELINE.length - 1 && <span className="arch2-stage-line" aria-hidden />}
             </div>
           )
@@ -68,8 +91,8 @@ export function ArchitectureDiagram() {
               <span className="arch2-worker-name mono">invoice-reconciler</span>
               <span className="arch2-worker-task">Reconcile incoming invoices with ERP</span>
             </div>
-            <span className="pill running">
-              <span className="dot run pulse" /> running
+            <span className={`pill ${finished ? "verified" : "running"}`}>
+              <span className={`dot ${finished ? "verified" : "run"} pulse`} /> {finished ? "verified" : "running"}
             </span>
           </div>
           <div className="arch2-worker-meta">
@@ -94,7 +117,7 @@ export function ArchitectureDiagram() {
 
         <div className="arch2-cards">
           {/* Browser */}
-          <div className="arch2-card panel active">
+          <div className={`arch2-card panel ${browser}`}>
             <div className="arch2-card-head">
               <span className="arch2-card-icon">
                 <Browser size={18} weight="regular" />
@@ -103,7 +126,7 @@ export function ArchitectureDiagram() {
                 <span className="arch2-card-name">Browser</span>
                 <span className="arch2-card-sub">Read payment information</span>
               </div>
-              <span className="pill verified">active</span>
+              <span className={`pill ${browser === "active" ? "verified" : "muted"}`}>{pillFor(browser)}</span>
             </div>
             <div className="arch2-browser">
               <div className="arch2-browser-bar">
@@ -140,7 +163,7 @@ export function ArchitectureDiagram() {
           </div>
 
           {/* Sandbox */}
-          <div className="arch2-card panel">
+          <div className={`arch2-card panel ${sandbox}`}>
             <div className="arch2-card-head">
               <span className="arch2-card-icon">
                 <Cube size={18} weight="regular" />
@@ -149,7 +172,7 @@ export function ArchitectureDiagram() {
                 <span className="arch2-card-name">Sandbox</span>
                 <span className="arch2-card-sub">Reconcile and validate</span>
               </div>
-              <span className="pill muted">waiting</span>
+              <span className={`pill ${sandbox === "active" ? "verified" : "muted"}`}>{pillFor(sandbox)}</span>
             </div>
             <div className="arch2-code mono">
               <div className="arch2-code-path">/workspace/reconcile.py</div>
@@ -171,7 +194,7 @@ export function ArchitectureDiagram() {
           </div>
 
           {/* Desktop */}
-          <div className="arch2-card panel">
+          <div className={`arch2-card panel ${desktop}`}>
             <div className="arch2-card-head">
               <span className="arch2-card-icon">
                 <Desktop size={18} weight="regular" />
@@ -180,7 +203,7 @@ export function ArchitectureDiagram() {
                 <span className="arch2-card-name">Desktop</span>
                 <span className="arch2-card-sub">Update ERP system</span>
               </div>
-              <span className="pill muted">waiting</span>
+              <span className={`pill ${desktop === "active" ? "verified" : "muted"}`}>{pillFor(desktop)}</span>
             </div>
             <div className="arch2-erp">
               <div className="arch2-erp-menu">
@@ -204,15 +227,15 @@ export function ArchitectureDiagram() {
                   <span>Status</span>
                   <b className="ok">Ready to post</b>
                 </div>
-                <button className="arch2-erp-btn" type="button">
-                  Post to ERP
+                <button className={`arch2-erp-btn ${desktop === "active" ? "hot" : ""}`} type="button">
+                  {desktop === "done" || finished ? "Posted to ERP" : "Post to ERP"}
                 </button>
               </div>
             </div>
           </div>
 
           {/* Verification */}
-          <div className="arch2-card panel">
+          <div className={`arch2-card panel ${verify}`}>
             <div className="arch2-card-head">
               <span className="arch2-card-icon">
                 <CheckCircle size={18} weight="regular" />
@@ -221,18 +244,27 @@ export function ArchitectureDiagram() {
                 <span className="arch2-card-name">Verification</span>
                 <span className="arch2-card-sub">Check real world state</span>
               </div>
-              <span className="pill muted">pending</span>
+              <span className={`pill ${verify === "done" ? "verified" : verify === "active" ? "unknown" : "muted"}`}>
+                {verify === "done" ? "verified" : verify === "active" ? "checking" : "pending"}
+              </span>
             </div>
             <ul className="arch2-verify-list">
-              {["Agent claim", "Tool execution", "World state", "Independent check"].map((item) => (
-                <li key={item}>
-                  <span className="arch2-verify-box" />
-                  {item}
-                </li>
-              ))}
+              {VERIFY_ITEMS.map((item, i) => {
+                const on = verify === "done" || (verify === "active" && i <= Math.min(3, stage - 3))
+                return (
+                  <li key={item} className={on ? "on" : ""}>
+                    <span className="arch2-verify-box">{on ? "✓" : ""}</span>
+                    {item}
+                  </li>
+                )
+              })}
             </ul>
-            <div className="arch2-verify-foot">Awaiting execution</div>
+            <div className="arch2-verify-foot">
+              {verify === "done" ? "World state matched" : verify === "active" ? "Verifying…" : "Awaiting execution"}
+            </div>
           </div>
+        </div>
+      </div>
         </div>
       </div>
 
@@ -241,11 +273,11 @@ export function ArchitectureDiagram() {
           <span className="arch2-events-title">
             <span className="dot verified" /> Live events
           </span>
-          <span className="arch2-streaming mono">Streaming…</span>
+          <span className="arch2-streaming mono">{finished ? "Committed" : "Streaming…"}</span>
         </div>
         <div className="arch2-events-body mono">
-          {EVENTS.map((event) => (
-            <div className="arch2-event" key={event.t + event.tag}>
+          {EVENTS.map((event, i) => (
+            <div className={`arch2-event ${i < revealEvents ? "on" : ""}`} key={event.t + event.tag}>
               <span className="arch2-event-t">{event.t}</span>
               <span className="arch2-event-tag">[{event.tag}]</span>
               <span className="arch2-event-text">{event.text}</span>

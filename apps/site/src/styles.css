@@ -561,3 +561,37 @@ section { border-top: 1px solid var(--line); }
 }
 
 section[id] { scroll-margin-top: 76px; }
+
+/* ---------- architecture scroll stages ---------- */
+
+.arch2-card { transition: border-color 0.35s ease, box-shadow 0.35s ease, opacity 0.35s ease; }
+.arch2-card.waiting { opacity: 0.62; }
+.arch2-card.waiting:hover { opacity: 1; }
+.arch2-card.active { opacity: 1; border-color: #1f4a37; box-shadow: 0 0 0 1px #143528, 0 0 42px -18px #3ecf8e; }
+.arch2-card.active .arch2-card-icon { color: var(--verified); }
+.arch2-card.done { opacity: 1; border-color: #1c2e26; }
+.arch2-card.done .arch2-card-icon { color: var(--verified); }
+
+.arch2-erp-btn.hot { background: var(--verified); color: #04150e; }
+.arch2-verify-list li { transition: color 0.3s ease; }
+.arch2-verify-list li.on { color: var(--text); }
+.arch2-verify-box {
+  display: grid; place-items: center; font-size: 10px; color: #04150e;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+.arch2-verify-list li.on .arch2-verify-box { background: var(--verified); border-color: var(--verified); }
+
+.arch2-event { opacity: 0; transform: translateY(2px); transition: opacity 0.4s ease, transform 0.4s ease; }
+.arch2-event.on { opacity: 1; transform: none; }
+
+/* ---------- architecture scroll pinning ---------- */
+
+.arch2-sticky { position: sticky; top: 78px; }
+@media (min-width: 1081px) {
+  .arch2-scroll { height: 300vh; }
+  .arch2-scroll + .arch2-events { margin-top: 8px; }
+}
+@media (max-width: 1080px) {
+  .arch2-scroll { height: auto; }
+  .arch2-sticky { position: static; }
+}
