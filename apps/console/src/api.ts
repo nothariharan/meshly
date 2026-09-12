@@ -1,11 +1,12 @@
 import fs from "node:fs"
 import path from "node:path"
-import { Meshly, AuthorityManager, ProjectStore, Verifier } from "@meshly/sdk"
+import { Meshly, AuthorityManager, ProjectStore, Verifier, explainDecision, explainEnvironment, policyNameFor } from "@meshly/sdk"
 import type { StoredRun, StoredWorker, StoredEnvironment, StoredOperatorAction } from "@meshly/sdk"
 
 export interface ConsoleOptions {
   cwd?: string
   port?: number
+  quiet?: boolean
 }
 
 export function loadEnv(cwd: string): void {
@@ -103,7 +104,19 @@ export function snapshot(store: ProjectStore) {
   const initialized = store.exists()
   const config = initialized ? store.loadConfig() : null
   const workers = initialized ? uniqueWorkers(store.listWorkers()) : []
-  const runs = initialized ? store.listRuns().map(withDerivedEvents) : []
+  const runs = initialized
+    ? store.listRuns().map((run) => {
+        const withEvents = withDerivedEvents(run)
+        return {
+          ...withEvents,
+          decision: explainDecision(withEvents, {
+            policy: policyNameFor(withEvents.kind),
+            authority: withEvents.workerId,
+          }),
+          schedule: explainEnvironment(withEvents),
+        }
+      })
+    : []
   const environments = initialized ? store.listEnvironments() : []
   const { mode, label } = providerLabel(store)
   const attention = runs.filter(
@@ -121,6 +134,8 @@ export function snapshot(store: ProjectStore) {
     config,
     provider: { mode, label, hasSolariKey: Boolean(process.env.SOLARI_API_KEY) },
     workers: workers.map((w) => decorateWorker(w, runs, environments)),
+    projects: groupProjects(workers, runs),
+    metrics: aggregateMetrics(runs),
     runs,
     environments,
     meters: {
@@ -140,6 +155,72 @@ export function snapshot(store: ProjectStore) {
     occupied: occupied.map((e) => e.id),
     failedVerify,
     inflight: Array.from(inflight.entries()).map(([id, job]) => ({ workerId: id, ...job })),
+  }
+}
+
+/**
+ * Projects are a view over real persisted workers, grouped by domain.
+ * No new persistence, no seeded data — a project exists only because a worker does.
+ */
+const PROJECT_ORDER = ["Finance Ops", "Engineering", "Research", "Operations", "Other"]
+
+export function projectFor(kind?: string): string {
+  if (kind === "reconciliation") return "Finance Ops"
+  if (kind === "coding") return "Engineering"
+  if (kind === "research") return "Research"
+  if (kind === "operations") return "Operations"
+  return "Other"
+}
+
+function displayStatusFor(status?: string): string {
+  if (status === "COMPLETED" || status === "VERIFIED") return "VERIFIED"
+  if (status === "BLOCKED" || status === "VERIFICATION_FAILED") return "BLOCKED"
+  if (status === "UNKNOWN" || status === "VERIFYING") return "UNKNOWN"
+  if (status === "RUNNING" || status === "ALLOCATING" || status === "QUEUED") return "RUNNING"
+  return status || "CREATED"
+}
+
+function groupProjects(workers: StoredWorker[], runs: StoredRun[]) {
+  const byProject = new Map<string, { name: string; workers: any[] }>()
+  for (const worker of workers) {
+    const name = projectFor(worker.kind)
+    if (!byProject.has(name)) byProject.set(name, { name, workers: [] })
+    const workerRuns = runs.filter((r) => r.workerId === worker.id || r.workerName === worker.name)
+    const latest = workerRuns[0]
+    byProject.get(name)!.workers.push({
+      id: worker.id,
+      name: worker.name,
+      kind: worker.kind,
+      task: worker.task,
+      capabilities: worker.capabilities,
+      status: latest?.status || worker.status || "CREATED",
+      displayStatus: displayStatusFor(latest?.status || worker.status),
+      budget: worker.budget,
+      spent: worker.spent ?? 0,
+      currentRunId: latest?.runId,
+      currentRunStatus: latest?.status,
+      runCount: workerRuns.length,
+      lastRunAt: latest?.startedAt,
+      lastRunStatus: latest?.status,
+    })
+  }
+  return PROJECT_ORDER.filter((name) => byProject.has(name))
+    .concat([...byProject.keys()].filter((name) => !PROJECT_ORDER.includes(name)))
+    .map((name) => byProject.get(name)!)
+}
+
+function aggregateMetrics(runs: StoredRun[]) {
+  const succeeded = runs.filter((r) => r.status === "COMPLETED" || r.status === "VERIFIED").length
+  const blocked = runs.filter((r) => r.status === "BLOCKED" || r.status === "VERIFICATION_FAILED").length
+  const unknown = runs.filter((r) => r.status === "UNKNOWN" || r.status === "VERIFYING").length
+  const spend = runs.reduce((sum, r) => sum + (r.toolCalls ? 0 : 0), 0)
+  return {
+    totalRuns: runs.length,
+    succeeded,
+    blocked,
+    unknown,
+    scheduled: runs.filter((r) => typeof r.startedAt === "number").length,
+    spend,
   }
 }
 
@@ -289,9 +370,11 @@ export async function handleApi(
     const scenario =
       body?.scenario === "reality-divergence"
         ? "reality-divergence"
-        : body?.scenario === "ambiguous-timeout"
-          ? "ambiguous-timeout"
-          : "default"
+        : body?.scenario === "ambiguous-timeout-absent"
+          ? "ambiguous-timeout-absent"
+          : body?.scenario === "ambiguous-timeout"
+            ? "ambiguous-timeout"
+            : "default"
     return startWorkerRun(store, id, scenario)
   }
 
@@ -353,7 +436,7 @@ export async function handleApi(
 async function startWorkerRun(
   store: ProjectStore,
   id: string,
-  scenario: "default" | "reality-divergence" | "ambiguous-timeout",
+  scenario: "default" | "reality-divergence" | "ambiguous-timeout" | "ambiguous-timeout-absent",
 ): Promise<{ status: number; json?: any; error?: string }> {
   const definition = store.getWorker(id)
   if (!definition) return { status: 404, error: `Worker '${id}' not found.` }

@@ -3,6 +3,15 @@ export type Snapshot = {
   config: { name: string; execution: string; createdAt: string } | null
   provider: { mode: "live" | "simulator"; label: string; hasSolariKey: boolean }
   workers: WorkerRow[]
+  projects: ProjectRecord[]
+  metrics: {
+    totalRuns: number
+    succeeded: number
+    blocked: number
+    unknown: number
+    scheduled: number
+    spend: number
+  }
   runs: RunRecord[]
   environments: EnvRecord[]
   policies: PolicyRecord[]
@@ -10,6 +19,26 @@ export type Snapshot = {
   occupied: string[]
   failedVerify: number
   inflight: Array<{ workerId: string; runId?: string; error?: string }>
+}
+
+export type ProjectRecord = {
+  name: string
+  workers: Array<{
+    id: string
+    name: string
+    kind?: string
+    task?: string
+    capabilities?: string[]
+    status?: string
+    displayStatus: string
+    budget: number
+    spent: number
+    currentRunId?: string
+    currentRunStatus?: string
+    runCount?: number
+    lastRunAt?: number
+    lastRunStatus?: string
+  }>
 }
 
 export type WorkerRow = {
@@ -71,6 +100,19 @@ export type RunRecord = {
   operatorActions?: Array<{ type: string; at: string; result: string }>
   toolCalls?: number
   retries?: number
+  kind?: string
+  decision?: {
+    decision: string
+    headline: string
+    why: string[]
+    policy?: string
+    authority?: string
+    next?: string
+  }
+  schedule?: {
+    headline: string
+    why: string[]
+  }
 }
 
 export type EnvRecord = {
@@ -131,7 +173,7 @@ export async function createWorker(body: {
   )
 }
 
-export async function runWorker(id: string, scenario?: "default" | "reality-divergence") {
+export async function runWorker(id: string, scenario?: "default" | "reality-divergence" | "ambiguous-timeout" | "ambiguous-timeout-absent") {
   return parse(
     await fetch(`/api/workers/${encodeURIComponent(id)}/run`, {
       method: "POST",

@@ -140,7 +140,10 @@ export function startConsole(portOrOpts: number | ConsoleOptions = DEFAULT_PORT)
   })
 
   server.listen(port, () => {
-    console.log(`[Meshly] Operator console  http://localhost:${port}`)
+    if (opts.quiet) return
+    const addr = server.address()
+    const bound = typeof addr === "object" && addr ? addr.port : port
+    console.log(`[Meshly] Operator console  http://localhost:${bound}`)
   })
   return server
 }
