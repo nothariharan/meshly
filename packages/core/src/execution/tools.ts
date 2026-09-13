@@ -79,6 +79,19 @@ export function isUncertainSideEffect(tool: string): boolean {
   return tool === "desktop_write" || tool === "sandbox_write"
 }
 
+/**
+ * The environment died before the action could be dispatched, so no side effect
+ * left. Meshly may safely allocate a replacement and retry, unlike an action
+ * whose outcome is genuinely unknown.
+ */
+export class EnvironmentUnavailableError extends Error {
+  readonly dispatched = false
+  constructor(message: string) {
+    super(message)
+    this.name = "EnvironmentUnavailableError"
+  }
+}
+
 export async function dispatchTool(req: ToolDispatchRequest): Promise<ToolDispatchResult> {
   const spec = TOOL_CATALOG[req.tool]
   if (!spec) {
@@ -93,7 +106,7 @@ export async function dispatchTool(req: ToolDispatchRequest): Promise<ToolDispat
     return {
       outcome: "FAILURE",
       claimedSuccess: false,
-      observation: { error: "ENVIRONMENT LOST", tool: req.tool },
+      observation: { error: "ENVIRONMENT LOST", tool: req.tool, dispatched: false, environmentGone: true },
     }
   }
 
@@ -117,6 +130,13 @@ export async function dispatchTool(req: ToolDispatchRequest): Promise<ToolDispat
   } catch (err) {
     if (err instanceof AmbiguousTimeoutError) {
       return unknownResult(req, err.message)
+    }
+    if (err instanceof EnvironmentUnavailableError) {
+      return {
+        outcome: "FAILURE",
+        claimedSuccess: false,
+        observation: { error: err.message, tool: req.tool, dispatched: false, environmentGone: true },
+      }
     }
     const message = err instanceof Error ? err.message : String(err)
     return {
@@ -222,7 +242,13 @@ async function browserAction(tool: string, handle: any, req: ToolDispatchRequest
 }
 
 async function sandboxAction(tool: string, handle: any, args: Record<string, any>): Promise<Record<string, any>> {
-  if (handle.connect) await handle.connect()
+  if (handle.connect) {
+    try {
+      await handle.connect()
+    } catch (err) {
+      throw new EnvironmentUnavailableError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   if (Array.isArray(args.prepare)) {
     for (const file of args.prepare) {
@@ -269,12 +295,33 @@ async function sandboxAction(tool: string, handle: any, args: Record<string, any
 async function desktopAction(tool: string, handle: any, req: ToolDispatchRequest): Promise<Record<string, any>> {
   const args = req.args || {}
   if (args.delayMs) await sleep(Number(args.delayMs))
-  if (handle.connect) await handle.connect()
+
+  // Only (re)connect when the session is not already live. Reconnecting a live
+  // Solari desktop opens a second control channel and can drop the session.
+  let alreadyLive = false
+  if (handle.health) {
+    try {
+      alreadyLive = Boolean((await handle.health())?.ready)
+    } catch {
+      alreadyLive = false
+    }
+  }
+  if (!alreadyLive && handle.connect) {
+    try {
+      await handle.connect()
+    } catch (err) {
+      throw new EnvironmentUnavailableError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   if (handle.health) {
     for (let i = 0; i < 15; i++) {
-      const health = await handle.health()
-      if (health?.ready) break
+      try {
+        const health = await handle.health()
+        if (health?.ready) break
+      } catch {
+        /* keep waiting; a transient health failure is not fatal */
+      }
       await sleep(400)
     }
   }

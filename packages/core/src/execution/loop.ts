@@ -182,7 +182,7 @@ export async function executeProgramStep(
   run.updateStepStatus(execStep.id, "authorized")
   options.onProgress?.(run)
 
-  const env = await ensureEnvironment(runtime, worker, run, type, leases)
+  let env = await ensureEnvironment(runtime, worker, run, type, leases)
   run.updateStepStatus(execStep.id, "executing")
   options.onProgress?.(run)
 
@@ -197,28 +197,24 @@ export async function executeProgramStep(
     timeoutMs: step.args.timeoutMs,
   })
 
-  const gone = dispatched.outcome === "FAILURE" && isEnvironmentGone(dispatched.observation?.error)
-  if (gone) {
+  const goneOf = (d: { outcome: string; observation?: Record<string, any> }) =>
+    d.outcome === "FAILURE" && (d.observation?.environmentGone === true || isEnvironmentGone(d.observation?.error))
+
+  let replacements = 0
+  while (goneOf(dispatched)) {
     runtime.broker.markLost(env.id, dispatched.observation?.error || "ENVIRONMENT LOST", { workerId: worker.id, runId: run.runId })
     leases.delete(type)
-    if (isUncertainSideEffect(tool)) {
+    // If the environment died before the action was dispatched, no side effect
+    // left, so a fresh environment may safely carry the step. Only a write that
+    // may have landed is treated as UNKNOWN and never retried.
+    const noSideEffect = dispatched.observation?.dispatched === false
+    if (isUncertainSideEffect(tool) && !noSideEffect) {
       return independentVerifyUnknown(runtime, worker, run, execStep, step, env, {
         ...dispatched.observation,
         reason: dispatched.observation?.error || "ENVIRONMENT LOST",
       }, options)
     }
-    const replacement = await ensureEnvironment(runtime, worker, run, type, leases)
-    options.onProgress?.(run)
-    dispatched = await dispatchTool({
-      tool,
-      args: stepArgs,
-      env: replacement,
-      artifactDir: options.artifactDir,
-      runId: run.runId,
-      timeoutMs: step.args.timeoutMs,
-    })
-    if (dispatched.outcome === "FAILURE" && isEnvironmentGone(dispatched.observation?.error)) {
-      runtime.broker.markLost(replacement.id, dispatched.observation?.error || "ENVIRONMENT LOST", { workerId: worker.id, runId: run.runId })
+    if (replacements >= 2) {
       run.updateStepStatus(execStep.id, "rejected", {
         observation: dispatched.observation,
         error: dispatched.observation?.error,
@@ -228,9 +224,18 @@ export async function executeProgramStep(
       options.onProgress?.(run)
       return "halt"
     }
-    return finishDispatchedStep(runtime, worker, run, execStep, step, replacement, dispatched, options)
+    replacements += 1
+    env = await ensureEnvironment(runtime, worker, run, type, leases)
+    options.onProgress?.(run)
+    dispatched = await dispatchTool({
+      tool,
+      args: stepArgs,
+      env,
+      artifactDir: options.artifactDir,
+      runId: run.runId,
+      timeoutMs: step.args.timeoutMs,
+    })
   }
-
   return finishDispatchedStep(runtime, worker, run, execStep, step, env, dispatched, options)
 }
 

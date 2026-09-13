@@ -21,6 +21,53 @@ Project:      .meshly/ in this repo
 meshly dev                 # http://localhost:3400
 ```
 
+## Cursor → Meshly → Solari (agent-driven demo)
+
+Cursor is the reasoning interface, Meshly is the control layer, Solari is the
+execution infrastructure. Cursor never receives Solari tools.
+
+Point Cursor at the Meshly MCP server (`.cursor/mcp.json` or Cursor settings):
+
+```json
+{
+  "mcpServers": {
+    "meshly": {
+      "command": "meshly",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Then ask Cursor:
+
+> Create a Meshly worker called invoice-reconciler with browser, sandbox and
+> desktop capabilities, reconcile invoice 4421, run it, and report only after
+> Meshly has independently verified the world state.
+
+Cursor should call `meshly_create_worker` → `meshly_run` → `meshly_get_run` →
+`meshly_verify`. It must **not** see `solari_*` tools.
+
+Verify the invariant at any time:
+
+```bash
+npx tsx tests/live/mcp-invariant.ts          # simulator
+npx tsx tests/live/mcp-invariant.ts --live   # real Solari
+```
+
+## Solari session hygiene
+
+`meshly run` destroys its environments. A killed or dropped session can still
+linger in Solari's warm pool and occupy concurrency. Drain before recording:
+
+```bash
+npx tsx scripts/drain-solari.ts
+```
+
+Meshly recovers on its own when an environment dies **before** a side effect is
+dispatched (it allocates a replacement and retries). When a write may already
+have landed, it stays UNKNOWN and never retries — that is the point.
+
 ## Run IDs
 
 | Story | Run ID | Status |

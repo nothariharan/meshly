@@ -124,6 +124,29 @@ export async function runHardeningTests(): Promise<{ passed: boolean }> {
   ok("environment.lost was recorded", lostMesh.events.query({ type: "environment.lost" }).length >= 1)
   ok("replacement sandbox was allocated", lostMesh.events.query({ type: "solari.sandbox.created" }).length >= 2)
 
+  const lostDesktopMesh = new Meshly({ preferSimulator: true })
+  const lostDesktopWorker = await lostDesktopMesh.workers.spawn({
+    name: "invoice-reconciler",
+    kind: "reconciliation",
+    task: "Reconcile today's payment records with the ERP",
+    capabilities: ["browser", "sandbox", "desktop"],
+  })
+  let crashedDesktop = false
+  const unsubDesktop = lostDesktopMesh.events.subscribe((event) => {
+    if (event.type === "solari.desktop.created" && !crashedDesktop && event.environmentId) {
+      crashedDesktop = true
+      void lostDesktopMesh.failures.inject({ type: "CRASH_ENVIRONMENT", targetEnvironmentId: event.environmentId })
+    }
+  })
+  const recoveredDesktop = await lostDesktopWorker.run({ destroyAfter: true })
+  unsubDesktop()
+  ok(
+    "desktop lost before a write is retried on a replacement, not marked UNKNOWN",
+    recoveredDesktop.status === "COMPLETED",
+    recoveredDesktop.status + " " + recoveredDesktop.error,
+  )
+  ok("replacement desktop was allocated", lostDesktopMesh.events.query({ type: "solari.desktop.created" }).length >= 2)
+
   const research = await runResearchWorker(new Meshly({ preferSimulator: true }))
   ok("research worker uses only public API", research.status === "COMPLETED", research.error)
   const coding = await runCodingWorker(new Meshly({ preferSimulator: true }))
