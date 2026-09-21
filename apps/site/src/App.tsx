@@ -9,6 +9,7 @@ import { WorksWithAgents } from "./components/WorksWithAgents"
 import { ArchitectureDiagram } from "./components/ArchitectureDiagram"
 import { HowItWorks } from "./components/HowItWorks"
 import { HeroConsole } from "./components/HeroConsole"
+import { BenchmarkProof } from "./components/BenchmarkProof"
 
 const GH = "https://github.com/nothariharan/meshly"
 const WORKSPACE = "http://localhost:3400"
@@ -127,6 +128,24 @@ export function App() {
         </div>
       </section>
 
+      <section id="benchmark">
+        <div className="wrap section-pad">
+          <div className="section-head">
+            <div className="eyebrow">Evidence</div>
+            <h2>Same agent. Same infrastructure. Different execution model.</h2>
+            <p className="lead">
+              A controlled benchmark across 100 trials per scenario. Same model, same task, same Solari environments, and same starting state. The only variable is whether Meshly governs the execution.
+            </p>
+          </div>
+          <BenchmarkProof />
+          <p className="bench-note muted">
+            Direct execution means the agent talks straight to the tools and commits on its own claim. Meshly intercepts
+            authority before dispatch and verifies the world before commit. Ground truth is read from the world, never
+            from the model's claim.
+          </p>
+        </div>
+      </section>
+
       <section id="install">
         <div className="wrap section-pad">
           <div className="section-head">
@@ -160,6 +179,7 @@ function Nav() {
           <a href="#how">How it works</a>
           <a href="#verify">Verification</a>
           <a href="#unknown">Unknown</a>
+          <a href="#benchmark">Benchmark</a>
           <a href="#product">Console</a>
           <a href={GH} target="_blank" rel="noreferrer">
             Docs
@@ -186,7 +206,7 @@ function Hero() {
   const [copied, setCopied] = useState(false)
   async function copy() {
     try {
-      await navigator.clipboard.writeText("npm install -g meshly")
+      await navigator.clipboard.writeText("npm install -g @nothariharan/meshly")
     } catch {
       /* ignore */
     }
@@ -204,7 +224,7 @@ function Hero() {
           </p>
           <div className="install-line">
             <span className="prompt">$</span>
-            <span>npm install -g meshly</span>
+            <span>npm install -g @nothariharan/meshly</span>
             <button className="copy-btn" onClick={copy} aria-label="Copy install command">
               {copied ? <Check size={15} weight="bold" /> : <Copy size={15} weight="regular" />}
             </button>

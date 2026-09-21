@@ -2,6 +2,7 @@ node_modules/
 package-lock.json
 .env
 .meshly/
+benchmarks/
 exports/
 dist/
 *.tgz

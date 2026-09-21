@@ -52,6 +52,12 @@ export async function runInit(
   console.log("[1] Connect execution provider")
   console.log(`    ${execution === "solari" ? "Solari" : "Local simulator"} ✓`)
 
+  const capsReady: Record<string, boolean | undefined> = {
+    browser: undefined,
+    sandbox: undefined,
+    desktop: undefined,
+  }
+
   if (skipProbe) {
     console.log("\n[2] Test infrastructure")
     console.log("    skipped (--skip-probe)")
@@ -76,12 +82,15 @@ export async function runInit(
         })
         const run = await worker.run({ destroyAfter: true })
         if (run.status === "COMPLETED") {
+          capsReady[cap] = true
           console.log("✓")
         } else {
+          capsReady[cap] = false
           console.log(`✗  ${run.error || run.status}`)
           if (execution === "solari") process.exitCode = 1
         }
       } catch (err) {
+        capsReady[cap] = false
         const message = err instanceof Error ? err.message : String(err)
         console.log(`✗  ${message}`)
         if (execution === "solari") process.exitCode = 1
@@ -92,11 +101,21 @@ export async function runInit(
   console.log("\n[3] Create worker")
   seedCanonicalWorker(store)
 
+  console.log("\nWorkspace ready.\n")
+  console.log(`  Provider   ${execution === "solari" ? "Solari" : "Local simulator"}`)
+  for (const cap of ["browser", "sandbox", "desktop"] as const) {
+    const state = capsReady[cap]
+    const mark = state === true ? "✓" : state === false ? "✗" : "·"
+    console.log(`  ${cap[0].toUpperCase()}${cap.slice(1).padEnd(9)} ${mark}`)
+  }
+  console.log("  Worker     invoice-reconciler")
+
   console.log("\n[4] Next")
-  console.log("    meshly doctor")
-  console.log("    meshly run")
+  console.log("    meshly doctor       verify this install end to end")
+  console.log("    meshly run          run the worker")
   console.log("    meshly dev          → http://localhost:3400")
-  console.log("\nReady.\n")
+  console.log("    meshly mcp          let Claude / GPT / Cursor drive Meshly")
+  console.log("")
 }
 
 function seedCanonicalWorker(store: ProjectStore): void {

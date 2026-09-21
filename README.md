@@ -9,7 +9,7 @@ Solari provides the environment.
 ## Install
 
 ```bash
-npm install -g meshly
+npm install -g @nothariharan/meshly
 meshly init
 meshly doctor
 meshly run
@@ -103,6 +103,35 @@ if (run.status === "UNKNOWN") {
 UNKNOWN does not mean FAILED. Verification does not retry the side effect. See [docs/concepts/unknown.md](docs/concepts/unknown.md).
 
 The canonical worker is [examples/reconciliation-worker](examples/reconciliation-worker).
+
+## Benchmark
+
+What changes when the same agent is placed behind Meshly?
+
+```bash
+meshly benchmark --suite execution
+```
+
+Same model. Same task. Same environments. Same starting state. The only
+variable is whether Meshly governs the execution. Ground truth is read from the
+world, never from the model's claim.
+
+```text
+REALITY DIVERGENCE     DIRECT   MESHLY
+False commits           100%      0%
+
+AMBIGUOUS TIMEOUT
+Duplicate side effects     5       0
+
+AUTHORITY VIOLATION
+Unauthorized actions       2       0
+
+RUNAWAY RETRIES
+Budget violations       100%      0%
+```
+
+Full method, scenarios, and honest limitations: [docs/benchmark.md](docs/benchmark.md).
+Results are labelled `simulator` or `solari` and are never mixed.
 
 ## From this repo
 

@@ -20,7 +20,7 @@ export function InstallTerminal() {
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText("npm install -g meshly")
+      await navigator.clipboard.writeText("npm install -g @nothariharan/meshly")
     } catch {
       /* clipboard may be unavailable; the command is visible regardless */
     }

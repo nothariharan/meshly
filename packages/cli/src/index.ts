@@ -67,6 +67,19 @@ function flagList(value: string | boolean | undefined, fallback: string[]): stri
   return value.split(",").map((s) => s.trim()).filter(Boolean)
 }
 
+/** Rough live-session estimate per trial, by scenario (both arms). */
+const LIVE_SESSIONS_PER_TRIAL: Record<string, number> = {
+  success: 6,
+  reality_divergence: 6,
+  ambiguous_timeout: 2,
+  authority_violation: 4,
+  runaway_retry: 2,
+}
+
+function estimateLiveSessions(scenarios: string[], trials: number): number {
+  return scenarios.reduce((total, id) => total + (LIVE_SESSIONS_PER_TRIAL[id] ?? 4), 0) * trials
+}
+
 function persistRun(
   store: ProjectStore,
   mesh: Meshly,
@@ -683,6 +696,11 @@ Usage:
   meshly restart                       Reconnect workers, runs, environments
   meshly dev [--port 3400]
   meshly mcp                           MCP server for other agents
+  meshly benchmark --suite execution   Direct agent vs Meshly-governed execution
+                                       [--trials 100] [--seed 20260915] [--out <dir>]
+                                       [--scenarios reality_divergence,ambiguous_timeout]
+                                       [--live --yes] [--max-sessions 30]
+  meshly benchmark --suite scheduler   Scheduler stress simulation [--workers 1000]
 
 Live Solari is the default. Pass --simulator only for a local kernel demo.
 `)
@@ -784,9 +802,105 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
       break
     }
     case "benchmark": {
-      const mesh = new Meshly({ preferSimulator: true })
-      await runBenchmark(mesh, parseInt(rest[0] || "1000", 10))
-      break
+      const suite = String(flags.suite || rest[0] || "execution").toLowerCase()
+      const schedulerSuite = suite === "scheduler" || suite === "sim" || /^\d+$/.test(suite)
+      if (schedulerSuite) {
+        const mesh = new Meshly({ preferSimulator: true })
+        const workers = /^\d+$/.test(suite) ? Number(suite) : parseInt(String(flags.workers || "1000"), 10)
+        await runBenchmark(mesh, workers)
+        break
+      }
+
+      const { runExecutionBenchmarkSuite, BenchmarkFabric, LIVE_SAFE_SCENARIOS } = await import("@meshly/benchmark")
+      const live = Boolean(flags.live) || String(flags.source || "").toLowerCase() === "solari"
+      const outDir = typeof flags.out === "string" ? path.resolve(flags.out) : path.join(store.root, ".meshly", "benchmarks")
+
+      let scenarios =
+        typeof flags.scenarios === "string"
+          ? (flags.scenarios.split(",").map((s) => s.trim()).filter(Boolean) as any)
+          : undefined
+      const concurrencyLevels =
+        typeof flags.levels === "string"
+          ? flags.levels.split(",").map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n))
+          : undefined
+
+      if (!live) {
+        const trials = Number(flags.trials || 100)
+        const seed = Number(flags.seed || 20260915)
+        const outcome = await runExecutionBenchmarkSuite(
+          { trials, seed, scenarios, concurrencyLevels, outputDir: outDir },
+          (id, index, total) => process.stdout.write(`\r  [${index}/${total}] ${id}…`),
+        )
+        process.stdout.write(`\r${" ".repeat(64)}\r`)
+        console.log(outcome.terminal)
+        console.log(`  JSON      ${outcome.written.json}`)
+        console.log(`  CSV       ${outcome.written.csv}`)
+        console.log(`  Markdown  ${outcome.written.markdown}`)
+        console.log("")
+        break
+      }
+
+      // ---- live Solari ----
+      const apiKey = requireSolariKey()
+      const { SolariExecutionFabric } = await import("@meshly/sdk")
+      const liveDefaults: any[] = ["reality_divergence", "ambiguous_timeout", "authority_violation"]
+      scenarios = (scenarios && scenarios.length ? scenarios : liveDefaults).filter((id: string) =>
+        (LIVE_SAFE_SCENARIOS as string[]).includes(id),
+      )
+      if (!scenarios.length) {
+        console.error(`\nNo live-safe scenarios selected. Choose from: ${LIVE_SAFE_SCENARIOS.join(", ")}\n`)
+        process.exitCode = 1
+        break
+      }
+      const trials = Number(flags.trials || 1)
+      const seed = Number(flags.seed || 20260915)
+      const maxSessions = Number(flags["max-sessions"] || 30)
+      const estimate = estimateLiveSessions(scenarios, trials)
+
+      console.log("\nMESHLY EXECUTION BENCHMARK — LIVE SOLARI")
+      console.log("  This provisions real cloud browsers, sandboxes, and desktops.")
+      console.log("  Both arms run the same task against the same real infrastructure.")
+      console.log("  Environment loss and contention are simulator-only by default.\n")
+      console.log(`  Scenarios    ${scenarios.join(", ")}`)
+      console.log(`  Trials       ${trials} per scenario (${trials * 2} runs)`)
+      console.log(`  Est. sessions ~${estimate}`)
+      console.log(`  Hard cap     ${maxSessions} sessions`)
+      console.log(`  Plan check   if trial 1 looks wrong, this is the moment to stop.\n`)
+
+      if (!flags.yes && !Boolean(flags["dry-run"])) {
+        console.log("  Nothing was started. Add --yes to spend Solari credit:\n")
+        console.log(`    meshly benchmark --suite execution --live --yes\n`)
+        break
+      }
+      if (Boolean(flags["dry-run"])) {
+        console.log("  Dry run. Nothing was started.\n")
+        break
+      }
+
+      const outcome = await runExecutionBenchmarkSuite(
+        {
+          trials,
+          seed,
+          scenarios,
+          outputDir: outDir,
+          source: "solari",
+          maxSessions,
+          armSettleMs: Number(flags.settle || 5000),
+          createFabric: () =>
+            new BenchmarkFabric(new SolariExecutionFabric({ apiKey, fallbackToSimulator: false }), "solari"),
+        },
+        (id, index, total) => process.stdout.write(`\r  [${index}/${total}] ${id}…`),
+      )
+      process.stdout.write(`\r${" ".repeat(64)}\r`)
+      console.log(outcome.terminal)
+      console.log(`  Sessions provisioned  ${outcome.report.sessionsCreated}`)
+      console.log(`  JSON      ${outcome.written.json}`)
+      console.log(`  CSV       ${outcome.written.csv}`)
+      console.log(`  Markdown  ${outcome.written.markdown}`)
+      console.log("")
+      // Live SDK clients can keep the event loop alive. The report is already
+      // written synchronously above, so exit deliberately.
+      process.exit(process.exitCode ?? 0)
     }
     case "help":
     default:

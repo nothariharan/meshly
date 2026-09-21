@@ -16,6 +16,7 @@ const workspaces = [
   "packages/core",
   "packages/solari",
   "packages/sdk",
+  "packages/benchmark",
   "apps/console",
   "packages/cli",
   "packages/meshly",

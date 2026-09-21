@@ -97,3 +97,13 @@ Frozen API: [docs/api.md](api.md)
 
 Do not invent new kernel concepts.
 
+## Evidence
+
+The product-model benchmark lives in [docs/benchmark.md](benchmark.md) and is
+run with `meshly benchmark --suite execution`. It compares direct agent
+execution against Meshly-governed execution on the same task, environments, and
+faults. It is an evaluation harness, not a second runtime: it adds no kernel
+concepts and both arms use the shipped tool dispatcher and the shipped Meshly
+runtime.
+
+

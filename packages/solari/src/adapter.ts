@@ -204,7 +204,21 @@ export class SolariExecutionFabric implements ExecutionFabric {
   }
 
   async close(): Promise<void> {
-    if (this.browserClient?.close) await this.browserClient.close()
+    if (this.browserClient?.close) {
+      try {
+        await this.browserClient.close()
+      } catch {
+        /* best effort: the process is shutting down */
+      }
+    }
+    const vm = this.vmClient
+    if (typeof vm?.close === "function") {
+      try {
+        await vm.close()
+      } catch {
+        /* best effort */
+      }
+    }
   }
 
   private async browser(): Promise<any> {
