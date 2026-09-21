@@ -132,6 +132,7 @@ export async function runDoctor(
     const bound = typeof addr === "object" && addr ? addr.port : 0
     const res = await fetch(`http://127.0.0.1:${bound}/api/snapshot`)
     const body = (await res.json()) as { initialized?: boolean }
+    server.closeAllConnections?.()
     await new Promise<void>((resolve) => server.close(() => resolve()))
     checks.push({
       name: "console",

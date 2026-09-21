@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, existsSync } from "node:fs"
+import { copyFileSync, cpSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import path from "node:path"
 
@@ -34,8 +34,37 @@ for (const dir of packages) {
 }
 
 const meshlyDir = path.join(root, "packages", "meshly")
-if (existsSync(meshlyDir) && existsSync(license)) {
-  copyFileSync(license, path.join(meshlyDir, "LICENSE"))
+if (existsSync(meshlyDir)) {
+  if (existsSync(license)) {
+    copyFileSync(license, path.join(meshlyDir, "LICENSE"))
+  }
+  const binFile = path.join(meshlyDir, "bin/meshly.js")
+  run(
+    "bundle @nothariharan/meshly",
+    "npx",
+    [
+      "esbuild",
+      path.join(root, "packages/cli/src/index.ts"),
+      "--bundle",
+      "--platform=node",
+      "--format=esm",
+      `--outfile=${binFile}`,
+      "--external:@solarisdk/browser",
+      "--external:@solarisdk/sdk",
+    ],
+    root,
+  )
+  if (existsSync(binFile)) {
+    const content = readFileSync(binFile, "utf8")
+    if (!content.startsWith("#!/usr/bin/env node")) {
+      writeFileSync(binFile, `#!/usr/bin/env node\n${content}`)
+    }
+  }
+  const uiSrc = path.join(root, "apps/console/dist/ui")
+  const uiDest = path.join(meshlyDir, "ui")
+  if (existsSync(uiSrc)) {
+    cpSync(uiSrc, uiDest, { recursive: true })
+  }
 }
 
 console.log("\nBuild complete.")

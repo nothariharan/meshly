@@ -921,8 +921,15 @@ function isDirectRun(): boolean {
 }
 
 if (isDirectRun()) {
-  runCli(process.argv.slice(2)).catch((err) => {
-    console.error(formatUserError(err))
-    process.exit(1)
-  })
+  runCli(process.argv.slice(2))
+    .then(() => {
+      const cmd = process.argv[2]
+      if (cmd !== "dev" && cmd !== "mcp") {
+        process.exit(process.exitCode ?? 0)
+      }
+    })
+    .catch((err) => {
+      console.error(formatUserError(err))
+      process.exit(1)
+    })
 }

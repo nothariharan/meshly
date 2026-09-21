@@ -22,6 +22,8 @@ function uiDir(): string {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const built = path.join(here, "ui")
   if (fs.existsSync(path.join(built, "index.html"))) return built
+  const parent = path.join(here, "..", "ui")
+  if (fs.existsSync(path.join(parent, "index.html"))) return parent
   const fromSrc = path.join(here, "..", "dist", "ui")
   if (fs.existsSync(path.join(fromSrc, "index.html"))) return fromSrc
   return built
@@ -153,6 +155,8 @@ export function startConsole(portOrOpts: number | ConsoleOptions = DEFAULT_PORT)
 function isDirectRun(): boolean {
   const entry = process.argv[1]
   if (!entry) return false
+  const norm = entry.toLowerCase()
+  if (!norm.endsWith("server.ts") && !norm.endsWith("server.js")) return false
   try {
     return import.meta.url === pathToFileURL(path.resolve(entry)).href
   } catch {
