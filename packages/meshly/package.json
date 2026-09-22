@@ -3,18 +3,37 @@
   "version": "0.1.1",
   "type": "module",
   "license": "MIT",
+  "author": "N. Hariharan",
   "description": "Meshly — the operating system for autonomous workers.",
-  "keywords": ["meshly", "solari", "autonomous-workers", "browser", "sandbox", "desktop"],
+  "keywords": [
+    "meshly",
+    "solari",
+    "autonomous-workers",
+    "agents",
+    "execution",
+    "governance",
+    "verification",
+    "browser",
+    "sandbox",
+    "desktop"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nothariharan/meshly.git",
     "directory": "packages/meshly"
   },
   "homepage": "https://meshly-six.vercel.app",
+  "bugs": {
+    "url": "https://github.com/nothariharan/meshly/issues"
+  },
   "engines": { "node": ">=20" },
   "publishConfig": { "access": "public" },
   "bin": {
     "meshly": "./bin/meshly.js"
+  },
+  "main": "./bin/meshly.js",
+  "exports": {
+    ".": "./bin/meshly.js"
   },
   "files": ["bin", "ui", "README.md", "LICENSE"],
   "dependencies": {
