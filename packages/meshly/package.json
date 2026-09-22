@@ -26,16 +26,25 @@
   "bugs": {
     "url": "https://github.com/nothariharan/meshly/issues"
   },
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
-    "meshly": "./bin/meshly.js"
+    "meshly": "bin/meshly.js"
   },
   "main": "./bin/meshly.js",
   "exports": {
     ".": "./bin/meshly.js"
   },
-  "files": ["bin", "ui", "README.md", "LICENSE"],
+  "files": [
+    "bin",
+    "ui",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@solarisdk/browser": "^0.1.3",
     "@solarisdk/sdk": "^0.1.2"
