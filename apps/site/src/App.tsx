@@ -1,5 +1,5 @@
 import { ArrowRight, Check, Copy, GithubLogo } from "@phosphor-icons/react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { EnvironmentFlow } from "./components/EnvironmentFlow"
 import { RealityDivergence } from "./components/RealityDivergence"
 import { UnknownRecovery } from "./components/UnknownRecovery"
@@ -10,15 +10,45 @@ import { ArchitectureDiagram } from "./components/ArchitectureDiagram"
 import { HowItWorks } from "./components/HowItWorks"
 import { HeroConsole } from "./components/HeroConsole"
 import { BenchmarkProof } from "./components/BenchmarkProof"
+import { Workspace404 } from "./components/Workspace404"
 
 const GH = "https://github.com/nothariharan/meshly"
 const WORKSPACE = "http://localhost:3400"
 
 export function App() {
+  const [currentPath, setCurrentPath] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = window.location.pathname
+      return p === "/" || p === "" ? "/" : p
+    }
+    return "/"
+  })
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const p = window.location.pathname
+      setCurrentPath(p === "/" || p === "" ? "/" : p)
+    }
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  const navigate = (path: string) => {
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", path)
+    }
+    setCurrentPath(path)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  if (currentPath !== "/") {
+    return <Workspace404 onBackToHome={() => navigate("/")} />
+  }
+
   return (
     <>
-      <Nav />
-      <Hero />
+      <Nav onOpenWorkspace={() => navigate("/workspace")} />
+      <Hero onOpenWorkspace={() => navigate("/workspace")} />
 
       <section id="how">
         <div className="wrap section-pad">
@@ -165,7 +195,7 @@ export function App() {
   )
 }
 
-function Nav() {
+function Nav({ onOpenWorkspace }: { onOpenWorkspace: () => void }) {
   return (
     <header className="nav">
       <div className="nav-inner">
@@ -190,9 +220,9 @@ function Nav() {
             <GithubLogo size={14} weight="fill" />
             <span className="star">★</span> GitHub
           </a>
-          <a className="btn sm" href={WORKSPACE} target="_blank" rel="noreferrer">
+          <button className="btn sm" onClick={onOpenWorkspace}>
             Open workspace
-          </a>
+          </button>
           <a className="btn primary sm" href="#install">
             Get started <ArrowRight size={14} weight="bold" />
           </a>
@@ -202,7 +232,7 @@ function Nav() {
   )
 }
 
-function Hero() {
+function Hero({ onOpenWorkspace }: { onOpenWorkspace: () => void }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
     try {
@@ -233,9 +263,9 @@ function Hero() {
             <a className="btn primary" href="#install">
               Get started <ArrowRight size={15} weight="bold" />
             </a>
-            <a className="btn ghost" href={WORKSPACE} target="_blank" rel="noreferrer">
+            <button className="btn ghost" onClick={onOpenWorkspace}>
               Open workspace
-            </a>
+            </button>
           </div>
           <p className="hero-note">The workspace is local to your machine — `meshly dev` serves it at localhost:3400.</p>
         </div>
