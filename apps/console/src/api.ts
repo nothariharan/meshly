@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { Meshly, AuthorityManager, ProjectStore, Verifier, explainDecision, explainEnvironment, policyNameFor } from "@meshly/sdk"
+import { Meshly, MeshlyError, AuthorityManager, ProjectStore, Verifier, explainDecision, explainEnvironment, policyNameFor } from "@meshly/sdk"
 import type { StoredRun, StoredWorker, StoredEnvironment, StoredOperatorAction } from "@meshly/sdk"
 
 export interface ConsoleOptions {
@@ -36,19 +36,29 @@ export function createStore(cwd: string): ProjectStore {
   return new ProjectStore(cwd)
 }
 
-export function providerLabel(store: ProjectStore): { mode: "live" | "simulator"; label: string } {
-  const execution = store.exists() ? store.loadConfig().execution : process.env.SOLARI_API_KEY ? "solari" : "simulator"
-  const live = execution === "solari" && Boolean(process.env.SOLARI_API_KEY)
-  return live
-    ? { mode: "live", label: "LIVE · SOLARI" }
-    : { mode: "simulator", label: "SIMULATOR" }
+export function providerLabel(store: ProjectStore): { mode: "live" | "simulator" | "unconfigured"; label: string } {
+  const execution = store.exists() ? store.loadConfig().execution : undefined
+  if (execution === "simulator") return { mode: "simulator", label: "SIMULATOR" }
+  if (process.env.SOLARI_API_KEY) return { mode: "live", label: "LIVE · SOLARI" }
+  if (execution === "solari") return { mode: "unconfigured", label: "SOLARI KEY MISSING" }
+  return { mode: "unconfigured", label: "NOT CONNECTED" }
 }
 
 function createMesh(store: ProjectStore): Meshly {
-  const { mode } = providerLabel(store)
-  if (mode === "simulator") return new Meshly({ preferSimulator: true })
+  const execution = store.exists() ? store.loadConfig().execution : undefined
+  if (execution === "simulator") return new Meshly({ preferSimulator: true })
+  const key = process.env.SOLARI_API_KEY
+  if (!key) {
+    throw new MeshlyError({
+      code: "MISSING_API_KEY",
+      title: "Meshly is not connected to Solari.",
+      reason: "No SOLARI_API_KEY. The console will not run a simulator in place of live infrastructure.",
+      action: "No environments were allocated.",
+      retry: "Set SOLARI_API_KEY, or initialize this project with --provider simulator.",
+    })
+  }
   return new Meshly({
-    solariApiKey: process.env.SOLARI_API_KEY,
+    solariApiKey: key,
     fallbackToSimulator: false,
   })
 }
@@ -322,7 +332,13 @@ export async function handleApi(
   }
 
   if (method === "POST" && pathname === "/api/init") {
-    const execution = body?.provider === "solari" && process.env.SOLARI_API_KEY ? "solari" : "simulator"
+    if (body?.provider === "solari" && !process.env.SOLARI_API_KEY) {
+      return {
+        status: 400,
+        error: "No SOLARI_API_KEY. Meshly will not start a simulator when Solari was requested.",
+      }
+    }
+    const execution = body?.provider === "solari" ? "solari" : "simulator"
     const config = store.ensure(body?.name || path.basename(store.root), execution)
     broadcast(store)
     return { status: 200, json: { config } }
@@ -445,7 +461,15 @@ async function startWorkerRun(
   inflight.set(definition.id, {})
   broadcast(store)
 
-  const mesh = createMesh(store)
+  let mesh: Meshly
+  try {
+    mesh = createMesh(store)
+  } catch (err) {
+    inflight.delete(definition.id)
+    broadcast(store)
+    const message = err instanceof MeshlyError ? err.format().trim() : err instanceof Error ? err.message : String(err)
+    return { status: 400, error: message }
+  }
   const caps =
     scenario === "reality-divergence" || scenario === "ambiguous-timeout"
       ? ["browser", "sandbox", "desktop"]
@@ -609,7 +633,15 @@ function resumeStoredRun(store: ProjectStore, runId: string): { status: number; 
   inflight.set(stored.workerId, { runId: stored.runId })
   broadcast(store)
 
-  const mesh = createMesh(store)
+  let mesh: Meshly
+  try {
+    mesh = createMesh(store)
+  } catch (err) {
+    inflight.delete(stored.workerId)
+    broadcast(store)
+    const message = err instanceof MeshlyError ? err.format().trim() : err instanceof Error ? err.message : String(err)
+    return { status: 400, error: message }
+  }
   void mesh
     .restore(store)
     .then(() =>

@@ -5,7 +5,7 @@ import { useInView, useSequence } from "../hooks"
 const LINES: Array<{ text: string; prompt?: boolean; tone?: "ok" | "ready" }> = [
   { text: "meshly doctor", prompt: true },
   { text: "✓ Meshly installed", tone: "ok" },
-  { text: "✓ Node 22.19.0", tone: "ok" },
+  { text: "✓ Node 20+", tone: "ok" },
   { text: "✓ Solari API key configured", tone: "ok" },
   { text: "✓ Browser environment available", tone: "ok" },
   { text: "✓ Sandbox environment available", tone: "ok" },

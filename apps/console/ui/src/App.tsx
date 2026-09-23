@@ -372,7 +372,7 @@ function Sidebar({
         <div className="sidebar-conn">
           <span className="dot" />
           <span className="nm">Solari</span>
-          <span className="st">{state.provider.mode === "live" ? "Connected" : "Simulator"}</span>
+          <span className="st">{providerStatus(state.provider.mode)}</span>
         </div>
         <div className="conn-envs">
           <span className="ce">
@@ -402,6 +402,18 @@ function Sidebar({
   )
 }
 
+function providerStatus(mode: Snapshot["provider"]["mode"]): string {
+  if (mode === "live") return "Connected"
+  if (mode === "simulator") return "Simulator"
+  return "Not connected"
+}
+
+function providerBadge(mode: Snapshot["provider"]["mode"]): string {
+  if (mode === "live") return "LIVE"
+  if (mode === "simulator") return "SIM"
+  return "OFF"
+}
+
 function workerSpend(state: Snapshot): number {
   return state.workers.reduce((sum, w) => sum + (w.spent || 0), 0)
 }
@@ -422,7 +434,7 @@ function Topbar({ route, state }: { route: Route; state: Snapshot }) {
           GitHub ↗
         </a>
         <span className={`provider ${state.provider.mode === "live" ? "live" : ""}`}>
-          {state.provider.mode === "live" ? "LIVE" : "SIM"}
+          {providerBadge(state.provider.mode)}
         </span>
         <span className="avatar" title="Local operator">
           H

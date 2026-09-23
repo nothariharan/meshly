@@ -17,7 +17,7 @@ import { Meshly } from "@meshly/sdk"
 
 const fabric = new SolariExecutionFabric({
   apiKey: process.env.SOLARI_API_KEY,
-  fallbackToSimulator: true, // Gracefully simulate if key is unset
+  fallbackToSimulator: false,
 })
 
 const mesh = new Meshly({ executionFabric: fabric })

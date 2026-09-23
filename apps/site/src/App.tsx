@@ -134,7 +134,7 @@ export function App() {
             <div className="eyebrow">Evidence</div>
             <h2>Same agent. Same infrastructure. Different execution model.</h2>
             <p className="lead">
-              A controlled benchmark across 100 trials per scenario. Same model, same task, same Solari environments, and same starting state. The only variable is whether Meshly governs the execution.
+              A controlled simulator benchmark across 100 trials per scenario. Same model, same task, same starting state. The only variable is whether Meshly governs the execution. These numbers are from the local simulator, not live Solari.
             </p>
           </div>
           <BenchmarkProof />
@@ -152,7 +152,7 @@ export function App() {
             <div className="eyebrow">Get started</div>
             <h2>Install Meshly in seconds.</h2>
             <p className="lead">
-              Get up and running with a few commands. Requires Node 22+ and a Solari account.
+              Get up and running with a few commands. Requires Node 20+ and a Solari account. Pass --simulator only when you mean the local kernel.
             </p>
           </div>
           <InstallTerminal />

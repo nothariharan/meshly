@@ -145,7 +145,7 @@ export async function startMeshlyMcpServer(options: MeshlyMcpOptions = {}): Prom
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "meshly", version: "0.2.0" },
+          serverInfo: { name: "meshly", version: "0.1.2" },
         },
       })
       return

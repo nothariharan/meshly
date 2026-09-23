@@ -8,6 +8,7 @@
 import {
   MeshlyRuntime,
   MeshlyConfig,
+  MeshlyError,
   ExecutionFabric,
   SimulatorExecutionFabric,
   Capability,
@@ -51,14 +52,19 @@ export class Meshly {
     } else {
       const apiKey = options.solariApiKey || process.env.SOLARI_API_KEY
       if (!apiKey) {
-        fabric = new SimulatorExecutionFabric()
-      } else {
-        fabric = new SolariExecutionFabric({
-          apiKey,
-          fallbackToSimulator: options.fallbackToSimulator ?? false,
+        throw new MeshlyError({
+          code: "MISSING_API_KEY",
+          title: "Meshly is not connected to Solari.",
+          reason: "No SOLARI_API_KEY. Meshly will not pretend live infrastructure ran.",
+          action: "No environments were allocated.",
+          retry: "Set SOLARI_API_KEY, or pass { preferSimulator: true } for a local demo.",
         })
-        mode = "live"
       }
+      fabric = new SolariExecutionFabric({
+        apiKey,
+        fallbackToSimulator: options.fallbackToSimulator ?? false,
+      })
+      mode = "live"
     }
 
     this.mode = mode

@@ -71,7 +71,7 @@ Meshly generates a **tamper-evident evidence bundle** for every verified action:
 - Post-action observed state (after)
 - Replay URLs (Solari browser session recordings, VNC desktop stream captures)
 - MicroVM exit logs
-- **SHA-256 Digest**: A cryptographic hash computed over the canonical state diff, worker ID, and intent.
+- **SHA-256 Digest**: A digest computed over the canonical state diff, worker ID, and intent. It detects tampering of the evidence bundle. It does not prove the observation is true.
 
 Any post-hoc modification to the audit trail invalidates the digest.
 

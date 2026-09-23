@@ -15,7 +15,7 @@ Meshly replaces ephemeral chat loops with explicit, stateful **`Run`** instances
 ```typescript
 import { Meshly } from "@meshly/sdk"
 
-const mesh = new Meshly()
+const mesh = new Meshly({ solariApiKey: process.env.SOLARI_API_KEY })
 
 // 1. Spawning a run with an agent adapter
 const run = await mesh.runWithAgent({
@@ -104,7 +104,7 @@ Evidence Digest: SHA-256 [047ce0a8d5ca0ee83f6...]
 ```
 
 From this state, operators can take four deterministic actions:
-1. **`Inspect`**: View the cryptographic SHA-256 evidence bundle and pre/post observations.
+1. **`Inspect`**: View the SHA-256 digest of the evidence bundle and the pre/post observations. The digest shows whether that bundle was altered. It does not prove the world state is true.
 2. **`Take Over`**: Attach an interactive terminal/browser session directly to the live Solari environment without dropping state.
 3. **`Retry`**: Re-evaluate or re-attempt the step with clean context.
 4. **`Compensate`**: Dispatch SAGA compensating actions in reverse order to undo prior committed mutations.

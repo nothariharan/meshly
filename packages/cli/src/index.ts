@@ -13,9 +13,10 @@ import { Meshly, AuthorityManager, inferWorkerKind, explainDecision, formatDecis
 import type { RunInstance, WorkerInstance } from "@meshly/core"
 import { runBenchmark } from "./benchmark.js"
 import { loadEnv, requireSolariKey } from "./env.js"
+import { cliUsesSimulator, mcpUsesSimulator } from "./mode.js"
 import { ProjectStore, type StoredRun, type StoredWorker } from "./store.js"
 import { runInit } from "./init.js"
-import { runDoctor } from "./doctor.js"
+import { runDoctor, cliVersion } from "./doctor.js"
 import { fileURLToPath } from "node:url"
 
 loadEnv()
@@ -50,11 +51,13 @@ function parseArgs(argv: string[]): { command: string; rest: string[]; flags: Re
   return { command: rest[0] || "help", rest: rest.slice(1), flags }
 }
 
-function createClient(flags: Record<string, string | boolean>, store?: ProjectStore): Meshly {
-  const fromConfig = store?.exists() ? store.loadConfig().execution === "simulator" : false
-  if (flags.simulator || fromConfig) {
-    return new Meshly({ preferSimulator: true })
-  }
+function createClient(
+  flags: Record<string, string | boolean>,
+  store?: ProjectStore,
+  surface: "cli" | "mcp" = "cli",
+): Meshly {
+  const simulator = surface === "mcp" ? mcpUsesSimulator(flags) : cliUsesSimulator(flags, store)
+  if (simulator) return new Meshly({ preferSimulator: true })
   requireSolariKey()
   return new Meshly({
     solariApiKey: process.env.SOLARI_API_KEY,
@@ -695,7 +698,7 @@ Usage:
   meshly export <run>
   meshly restart                       Reconnect workers, runs, environments
   meshly dev [--port 3400]
-  meshly mcp                           MCP server for other agents
+  meshly mcp [--simulator]             MCP server. Simulator only with --simulator.
   meshly benchmark --suite execution   Direct agent vs Meshly-governed execution
                                        [--trials 100] [--seed 20260915] [--out <dir>]
                                        [--scenarios reality_divergence,ambiguous_timeout]
@@ -708,6 +711,10 @@ Live Solari is the default. Pass --simulator only for a local kernel demo.
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { command, rest, flags } = parseArgs(argv)
+  if (flags.version || flags.v || command === "version" || command === "--version" || command === "-v") {
+    console.log(cliVersion())
+    return
+  }
   const store = new ProjectStore()
 
   switch (command) {
@@ -785,7 +792,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
     }
     case "mcp": {
       const { startMeshlyMcpServer } = await import("@meshly/sdk")
-      const mesh = createClient(flags, store)
+      const mesh = createClient(flags, store, "mcp")
+      const note = mesh.mode === "simulator" ? " (--simulator). This is not live Solari." : ""
+      process.stderr.write(`meshly mcp mode=${mesh.mode}${note}\n`)
       await startMeshlyMcpServer({ runtime: mesh.runtime, store })
       return
     }

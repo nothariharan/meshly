@@ -22,8 +22,10 @@ npm install @meshly/sdk @meshly/core @meshly/solari
 ```typescript
 import { Meshly, AuthorityManager } from "@meshly/sdk"
 
-// Initialize client (auto-detects SOLARI_API_KEY, falls back to simulator)
-const mesh = new Meshly()
+// Live when SOLARI_API_KEY is set. There is no silent simulator fallback.
+const mesh = new Meshly({ solariApiKey: process.env.SOLARI_API_KEY })
+// Local demo only:
+// const mesh = new Meshly({ preferSimulator: true })
 
 // 1. SCHEDULE: Spawn an autonomous worker
 const worker = await mesh.spawn({

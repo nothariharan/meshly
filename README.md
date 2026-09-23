@@ -133,9 +133,19 @@ Budget violations       100%      0%
 Full method, scenarios, and honest limitations: [docs/benchmark.md](docs/benchmark.md).
 Results are labelled `simulator` or `solari` and are never mixed.
 
-## From this repo
+## Install from npm
 
-Packages are not on npm yet. From a clone:
+```bash
+npm install -g @nothariharan/meshly
+meshly init --api-key <your Solari key>
+meshly doctor
+meshly run
+meshly dev
+```
+
+`meshly mcp` uses Solari when `SOLARI_API_KEY` is set. Pass `--simulator` when you mean the local kernel. A project previously initialized with `--provider simulator` does not change `meshly mcp`.
+
+## From this repo
 
 ```bash
 npm install
@@ -150,8 +160,9 @@ To install on a machine that has never seen this repo, without publishing:
 
 ```bash
 npm run pack:local
-npm install -g ./dist/npm/meshly-0.1.0.tgz ./dist/npm/meshly-cli-0.1.0.tgz ./dist/npm/meshly-core-0.1.0.tgz ./dist/npm/meshly-sdk-0.1.0.tgz ./dist/npm/meshly-solari-0.1.0.tgz ./dist/npm/meshly-console-0.1.0.tgz
 ```
+
+The exact install command is written to `dist/npm/INSTALL.txt`.
 
 ## Honesty
 

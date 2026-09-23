@@ -1,7 +1,7 @@
 export type Snapshot = {
   initialized: boolean
   config: { name: string; execution: string; createdAt: string } | null
-  provider: { mode: "live" | "simulator"; label: string; hasSolariKey: boolean }
+  provider: { mode: "live" | "simulator" | "unconfigured"; label: string; hasSolariKey: boolean }
   workers: WorkerRow[]
   projects: ProjectRecord[]
   metrics: {

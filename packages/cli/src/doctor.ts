@@ -11,6 +11,7 @@ import path from "node:path"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { Meshly, MESHLY_MCP_TOOLS } from "@meshly/sdk"
+import { cliUsesSimulator } from "./mode.js"
 import type { ProjectStore } from "./store.js"
 
 const MIN_NODE_MAJOR = 20
@@ -32,7 +33,7 @@ function versionOf(pkg: string, from: string): string | undefined {
   }
 }
 
-function cliVersion(): string {
+export function cliVersion(): string {
   try {
     const here = path.dirname(fileURLToPath(import.meta.url))
     const pkg = JSON.parse(fs.readFileSync(path.join(here, "..", "package.json"), "utf8"))
@@ -53,7 +54,7 @@ export async function runDoctor(
   flags: Record<string, string | boolean>,
 ): Promise<void> {
   const checks: Check[] = []
-  const simulator = Boolean(flags.simulator) || (store.exists() && store.loadConfig().execution === "simulator")
+  const simulator = cliUsesSimulator(flags, store)
   const skipProbe = Boolean(flags["skip-probe"])
 
   const nodeMajor = Number(process.versions.node.split(".")[0])
@@ -73,7 +74,9 @@ export async function runDoctor(
     checks.push({
       name: "Solari credentials",
       status: "skip",
-      detail: "simulator mode (pass nothing — live is the default)",
+      detail: flags.simulator
+        ? "explicit --simulator. This is not live Solari."
+        : "this project was initialized with --provider simulator. Pass --live to use Solari.",
     })
   } else if (key) {
     checks.push({
@@ -164,9 +167,14 @@ export async function runDoctor(
     })
   }
 
-  if (skipProbe) {
+  const missingKey = !simulator && !process.env.SOLARI_API_KEY
+  if (skipProbe || missingKey) {
     for (const cap of ["Browser", "Sandbox", "Desktop"]) {
-      checks.push({ name: `${cap} capability`, status: "skip", detail: "skipped (--skip-probe)" })
+      checks.push({
+        name: `${cap} capability`,
+        status: "skip",
+        detail: missingKey ? "not probed — no SOLARI_API_KEY" : "skipped (--skip-probe)",
+      })
     }
   } else {
     const mesh = simulator

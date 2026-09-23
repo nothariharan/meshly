@@ -5143,7 +5143,7 @@ async function startMeshlyMcpServer(options = {}) {
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "meshly", version: "0.2.0" }
+          serverInfo: { name: "meshly", version: "0.1.2" }
         }
       });
       return;
@@ -5849,14 +5849,19 @@ var init_dist3 = __esm({
         } else {
           const apiKey = options.solariApiKey || process.env.SOLARI_API_KEY;
           if (!apiKey) {
-            fabric = new SimulatorExecutionFabric();
-          } else {
-            fabric = new SolariExecutionFabric({
-              apiKey,
-              fallbackToSimulator: options.fallbackToSimulator ?? false
+            throw new MeshlyError({
+              code: "MISSING_API_KEY",
+              title: "Meshly is not connected to Solari.",
+              reason: "No SOLARI_API_KEY. Meshly will not pretend live infrastructure ran.",
+              action: "No environments were allocated.",
+              retry: "Set SOLARI_API_KEY, or pass { preferSimulator: true } for a local demo."
             });
-            mode = "live";
           }
+          fabric = new SolariExecutionFabric({
+            apiKey,
+            fallbackToSimulator: options.fallbackToSimulator ?? false
+          });
+          mode = "live";
         }
         this.mode = mode;
         this.runtime = new MeshlyRuntime({
@@ -5985,16 +5990,31 @@ function createStore(cwd) {
   return new ProjectStore(cwd);
 }
 function providerLabel(store) {
-  const execution = store.exists() ? store.loadConfig().execution : process.env.SOLARI_API_KEY ? "solari" : "simulator";
-  const live = execution === "solari" && Boolean(process.env.SOLARI_API_KEY);
-  return live ? { mode: "live", label: "LIVE \xB7 SOLARI" } : { mode: "simulator", label: "SIMULATOR" };
+  const execution = store.exists() ? store.loadConfig().execution : void 0;
+  if (execution === "simulator")
+    return { mode: "simulator", label: "SIMULATOR" };
+  if (process.env.SOLARI_API_KEY)
+    return { mode: "live", label: "LIVE \xB7 SOLARI" };
+  if (execution === "solari")
+    return { mode: "unconfigured", label: "SOLARI KEY MISSING" };
+  return { mode: "unconfigured", label: "NOT CONNECTED" };
 }
 function createMesh(store) {
-  const { mode } = providerLabel(store);
-  if (mode === "simulator")
+  const execution = store.exists() ? store.loadConfig().execution : void 0;
+  if (execution === "simulator")
     return new Meshly({ preferSimulator: true });
+  const key = process.env.SOLARI_API_KEY;
+  if (!key) {
+    throw new MeshlyError({
+      code: "MISSING_API_KEY",
+      title: "Meshly is not connected to Solari.",
+      reason: "No SOLARI_API_KEY. The console will not run a simulator in place of live infrastructure.",
+      action: "No environments were allocated.",
+      retry: "Set SOLARI_API_KEY, or initialize this project with --provider simulator."
+    });
+  }
   return new Meshly({
-    solariApiKey: process.env.SOLARI_API_KEY,
+    solariApiKey: key,
     fallbackToSimulator: false
   });
 }
@@ -6250,7 +6270,13 @@ async function handleApi(store, method, pathname, body) {
     return { status: 200, json: snapshot(store) };
   }
   if (method === "POST" && pathname === "/api/init") {
-    const execution = body?.provider === "solari" && process.env.SOLARI_API_KEY ? "solari" : "simulator";
+    if (body?.provider === "solari" && !process.env.SOLARI_API_KEY) {
+      return {
+        status: 400,
+        error: "No SOLARI_API_KEY. Meshly will not start a simulator when Solari was requested."
+      };
+    }
+    const execution = body?.provider === "solari" ? "solari" : "simulator";
     const config = store.ensure(body?.name || path5.basename(store.root), execution);
     broadcast(store);
     return { status: 200, json: { config } };
@@ -6349,7 +6375,15 @@ async function startWorkerRun(store, id, scenario) {
     return { status: 409, error: "Worker already running." };
   inflight.set(definition.id, {});
   broadcast(store);
-  const mesh = createMesh(store);
+  let mesh;
+  try {
+    mesh = createMesh(store);
+  } catch (err) {
+    inflight.delete(definition.id);
+    broadcast(store);
+    const message = err instanceof MeshlyError ? err.format().trim() : err instanceof Error ? err.message : String(err);
+    return { status: 400, error: message };
+  }
   const caps = scenario === "reality-divergence" || scenario === "ambiguous-timeout" ? ["browser", "sandbox", "desktop"] : definition.capabilities;
   const worker = await mesh.spawn({
     id: definition.id,
@@ -6502,7 +6536,15 @@ function resumeStoredRun(store, runId) {
     return { status: 409, error: "Worker already running." };
   inflight.set(stored.workerId, { runId: stored.runId });
   broadcast(store);
-  const mesh = createMesh(store);
+  let mesh;
+  try {
+    mesh = createMesh(store);
+  } catch (err) {
+    inflight.delete(stored.workerId);
+    broadcast(store);
+    const message = err instanceof MeshlyError ? err.format().trim() : err instanceof Error ? err.message : String(err);
+    return { status: 400, error: message };
+  }
   void mesh.restore(store).then(() => mesh.resume(stored.runId, {
     artifactDir: store.artifactDir(),
     destroyAfter: true,
@@ -8358,6 +8400,19 @@ function requireSolariKey() {
   return key;
 }
 
+// packages/cli/src/mode.ts
+function projectIsSimulator(store) {
+  return Boolean(store?.exists() && store.loadConfig().execution === "simulator");
+}
+function cliUsesSimulator(flags, store) {
+  if (flags.live) return false;
+  if (flags.simulator) return true;
+  return projectIsSimulator(store);
+}
+function mcpUsesSimulator(flags) {
+  return Boolean(flags.simulator);
+}
+
 // packages/cli/src/store.ts
 init_dist();
 
@@ -8517,7 +8572,7 @@ function mark(check) {
 }
 async function runDoctor(store, flags) {
   const checks = [];
-  const simulator = Boolean(flags.simulator) || store.exists() && store.loadConfig().execution === "simulator";
+  const simulator = cliUsesSimulator(flags, store);
   const skipProbe = Boolean(flags["skip-probe"]);
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   checks.push({
@@ -8535,7 +8590,7 @@ async function runDoctor(store, flags) {
     checks.push({
       name: "Solari credentials",
       status: "skip",
-      detail: "simulator mode (pass nothing \u2014 live is the default)"
+      detail: flags.simulator ? "explicit --simulator. This is not live Solari." : "this project was initialized with --provider simulator. Pass --live to use Solari."
     });
   } else if (key) {
     checks.push({
@@ -8622,9 +8677,14 @@ async function runDoctor(store, flags) {
       detail: err instanceof Error ? err.message : String(err)
     });
   }
-  if (skipProbe) {
+  const missingKey = !simulator && !process.env.SOLARI_API_KEY;
+  if (skipProbe || missingKey) {
     for (const cap of ["Browser", "Sandbox", "Desktop"]) {
-      checks.push({ name: `${cap} capability`, status: "skip", detail: "skipped (--skip-probe)" });
+      checks.push({
+        name: `${cap} capability`,
+        status: "skip",
+        detail: missingKey ? "not probed \u2014 no SOLARI_API_KEY" : "skipped (--skip-probe)"
+      });
     }
   } else {
     const mesh = simulator ? new Meshly({ preferSimulator: true }) : new Meshly({ solariApiKey: process.env.SOLARI_API_KEY, fallbackToSimulator: false });
@@ -8700,11 +8760,9 @@ function parseArgs(argv) {
   }
   return { command: rest[0] || "help", rest: rest.slice(1), flags };
 }
-function createClient(flags, store) {
-  const fromConfig = store?.exists() ? store.loadConfig().execution === "simulator" : false;
-  if (flags.simulator || fromConfig) {
-    return new Meshly({ preferSimulator: true });
-  }
+function createClient(flags, store, surface = "cli") {
+  const simulator = surface === "mcp" ? mcpUsesSimulator(flags) : cliUsesSimulator(flags, store);
+  if (simulator) return new Meshly({ preferSimulator: true });
   requireSolariKey();
   return new Meshly({
     solariApiKey: process.env.SOLARI_API_KEY,
@@ -9297,7 +9355,7 @@ Usage:
   meshly export <run>
   meshly restart                       Reconnect workers, runs, environments
   meshly dev [--port 3400]
-  meshly mcp                           MCP server for other agents
+  meshly mcp [--simulator]             MCP server. Simulator only with --simulator.
   meshly benchmark --suite execution   Direct agent vs Meshly-governed execution
                                        [--trials 100] [--seed 20260915] [--out <dir>]
                                        [--scenarios reality_divergence,ambiguous_timeout]
@@ -9309,6 +9367,10 @@ Live Solari is the default. Pass --simulator only for a local kernel demo.
 }
 async function runCli(argv = process.argv.slice(2)) {
   const { command, rest, flags } = parseArgs(argv);
+  if (flags.version || flags.v || command === "version" || command === "--version" || command === "-v") {
+    console.log(cliVersion());
+    return;
+  }
   const store = new ProjectStore();
   switch (command) {
     case "init":
@@ -9387,7 +9449,10 @@ Meshly restarted`);
     }
     case "mcp": {
       const { startMeshlyMcpServer: startMeshlyMcpServer2 } = await Promise.resolve().then(() => (init_dist3(), dist_exports2));
-      const mesh = createClient(flags, store);
+      const mesh = createClient(flags, store, "mcp");
+      const note = mesh.mode === "simulator" ? " (--simulator). This is not live Solari." : "";
+      process.stderr.write(`meshly mcp mode=${mesh.mode}${note}
+`);
       await startMeshlyMcpServer2({ runtime: mesh.runtime, store });
       return;
     }
